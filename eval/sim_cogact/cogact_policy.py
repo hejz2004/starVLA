@@ -15,9 +15,9 @@ from transforms3d.euler import euler2axangle
 from transformers import AutoModelForVision2Seq, AutoProcessor
 
 
-from vla import CogACT
-from vla import load_vla
-from sim_cogact.adaptive_ensemble import AdaptiveEnsembler
+from llavavla.model.vla import CogACT
+from llavavla.model.vla import load_vla
+from eval.sim_cogact.adaptive_ensemble import AdaptiveEnsembler
 
 class CogACTInference:
     def __init__(
