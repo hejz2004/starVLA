@@ -174,7 +174,7 @@ class FSDPStrategy_QWen(TrainingStrategy):
 
     def run_setup(self, run_dir: Path, n_train_examples: int) -> None:
         # Iteratively Assemble FSDP Wrapping Policy by fetching the wrapping policies for each backbone/constituent
-        vlm_fsdp_wrapping_policy = self.vlm.get_fsdp_wrapping_policy()
+        vlm_fsdp_wrapping_policy = self.vlm.get_fsdp_wrapping_policy() #@Jinhui TODO 我很不喜欢这种递归 调用风格！！！ 😧
 
         # Assemble the Default FSDP Mixed Precision Policy
         if self.enable_mixed_precision_training and self.mixed_precision_dtype == torch.bfloat16:
