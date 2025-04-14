@@ -74,14 +74,14 @@ class QwenACTInference:
           action_dim=action_dim,
         )
 
-        if use_bf16:
+        if use_bf16: # False
             self.vla.vlm = self.vla.vlm.to(torch.bfloat16)
         self.vla = self.vla.to("cuda").eval()
-        self.cfg_scale = cfg_scale
+        self.cfg_scale = cfg_scale # 1.5
 
         self.image_size = image_size
-        self.action_scale = action_scale
-        self.horizon = horizon
+        self.action_scale = action_scale # 1.0
+        self.horizon = horizon #0
         self.action_ensemble = action_ensemble
         self.adaptive_ensemble_alpha = adaptive_ensemble_alpha
         self.action_ensemble_horizon = action_ensemble_horizon
