@@ -306,10 +306,9 @@ def train(cfg: TrainConfig) -> None:
 
 
 if __name__ == "__main__":
-    if int(os.environ.get("RANK", -1)) == 0:
+    if os.environ.get("DEBUG", None):
         import debugpy
         debugpy.listen(("0.0.0.0", 5678))
         print("🔍 Rank 0 waiting for debugger attach on port 5678...")
         debugpy.wait_for_client()
-
     train()
