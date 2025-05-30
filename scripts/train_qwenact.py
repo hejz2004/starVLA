@@ -147,6 +147,8 @@ class TrainConfig:
 
     # fmt: on
 
+
+
 def load_model(cfg, hf_token):
     overwatch.info(f"Loading Base VLM `{cfg.vla.base_vlm}` from ID/Path")
     if cfg.pretrained_checkpoint is not None: #这里还没有检查过
@@ -311,8 +313,6 @@ def trainer(model, train_dataloader, optimizer, lr_scheduler, accelerator, cfg):
                     
             if completed_steps >= max_train_steps:
                 break
-
-
 
     # Save final checkpoint
     if accelerator.is_main_process:
