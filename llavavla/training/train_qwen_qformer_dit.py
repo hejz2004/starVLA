@@ -339,7 +339,7 @@ def train(cfg: TrainConfig) -> None:
     # [Explicit] Call to `freeze_backbones` here for clarity =>> will log exactly what is/is not frozen
     stage = "full-finetune"  # Full fine-tuning
     overwatch.info(f"Invoking `VLM.freeze_backbones()` for `{vla_id}` => Stage: `{stage}`")
-    vla.freeze_backbones(stage)
+    vla.freeze_backbones()
 
     # Print number of total/trainable model parameters # TODO 应该集成到trainer 中
     num_params = sum(p.numel() for p in vla.parameters())
