@@ -49,7 +49,7 @@ from llavavla.training import VLAMetrics
 
 from llavavla.conf import VLAConfig, VLARegistry
 
-from llavavla.dataloader.datasets import get_vla_dataset, collate_fn# TODO 要移动到dataloader 下面
+from llavavla.dataloader.rlds_datasets import get_vla_dataset, collate_fn# TODO 要移动到dataloader 下面
 from accelerate import Accelerator, DeepSpeedPlugin
 
 deepspeed_plugin = DeepSpeedPlugin()# 这个插件是否能使用到 config 的参数呢？ 其实这里应该是可以飞显示用的， 感觉有版本问题 #zero_stage=2, gradient_accumulation_steps=1 ：v2: hf_ds_config="scripts/run_scripts/ds_config.yaml"
@@ -192,6 +192,12 @@ def trainer(model, train_dataloader, optimizer, lr_scheduler, accelerator, cfg):
     global_batch_size = cfg.vla.expected_world_size * cfg.vla.per_device_batch_size
     
     while completed_steps < cfg.vla.max_train_steps:
+        # train_dataloader_vla
+        # train_dataloader_vlm
+        # batch_samples_vla = next(iter(train_dataloader_vla)) 
+        # batch_samples_vlm = next(iter(train_dataloader_vlm))
+        # batch = batch_samples_vla.extend(batch_samples_vlm) 
+        
         for batch in train_dataloader:
             # with accelerator.accumulate(model): # zero2 不允许gred 累计, 先保留， 看看zero3 是否允许
             optimizer.zero_grad() # @Jinhui TODO 之后 put data_processing here 
@@ -333,7 +339,7 @@ def train(cfg: TrainConfig) -> None:
     # [Explicit] Call to `freeze_backbones` here for clarity =>> will log exactly what is/is not frozen
     stage = "full-finetune"  # Full fine-tuning
     overwatch.info(f"Invoking `VLM.freeze_backbones()` for `{vla_id}` => Stage: `{stage}`")
-    vla.freeze_backbones(stage)
+    vla.freeze_backbones()
 
     # Print number of total/trainable model parameters # TODO 应该集成到trainer 中
     num_params = sum(p.numel() for p in vla.parameters())
