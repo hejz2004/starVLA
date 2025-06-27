@@ -392,7 +392,7 @@ def make_data_info_multiprocess(root_path, save_json_path, save_meta_path, seque
 
 if __name__ == "__main__":
     args = parse_args()
-    root_path = "/mnt/petrelfs/share/efm_p/wangfangjing/datasets"
+    root_path = "/mnt/petrelfs/share/yejinhui/Datasets/"
     make_dir(f"{root_path}/data_info/")
     
     for dataset_name in args.dataset_names:
