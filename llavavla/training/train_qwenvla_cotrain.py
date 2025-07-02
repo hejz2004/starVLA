@@ -71,7 +71,7 @@ overwatch = initialize_overwatch(__name__) # 后期移除， 不要基于 prisma
 logger = get_logger(__name__)
 
 
-from llavavla.model.framework.qwenact import build_model_framework
+from llavavla.model.framework.qwenpi import build_model_framework
 
 def load_fast_tokenizer():
     fast_tokenizer = AutoProcessor.from_pretrained(
@@ -125,10 +125,7 @@ def trainer(model, vla_train_dataloader,vlm_train_dataloader, optimizer, lr_sche
     completed_steps = 0
 
     progress_bar = tqdm(range(cfg.vla.max_steps), disable=not accelerator.is_local_main_process)
-    total_loss = 0.0
 
-    global_batch_size = cfg.vla.expected_world_size * cfg.vla.per_device_batch_size
-    
     # -------------- 准备阶段：放在 while 外 --------------
     vla_iter = iter(vla_train_dataloader)   # 句柄保留下来
     vlm_iter = iter(vlm_train_dataloader)
@@ -144,27 +141,21 @@ def trainer(model, vla_train_dataloader,vlm_train_dataloader, optimizer, lr_sche
             batch_samples_vlm = next(vlm_iter)
         except StopIteration:
             vlm_iter = iter(vlm_train_dataloader)
-            batch_samples_vlm = next(vlm_iter)# batch = batch_samples_vla.extend(batch_samples_vlm) 
+            batch_samples_vlm = next(vlm_iter) # batch = batch_samples_vla.extend(batch_samples_vlm) 
             
         # for batch in vla_train_dataloader:
-        # with accelerator.accumulate(model): # zero2 不允许gred 累计, 先保留， 看看zero3 是否允许
+        # with accelerator.accumulate(model): # zero2 不允许gred 累计, 先保留， 看看zero3 是否允许 TODO 开看fangjing 怎么解决了这个问题
         optimizer.zero_grad() # @Jinhui TODO 之后 put data_processing here 
         # dist.barrier()
-        # forward vlm data
 
         # forward action data
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            action_loss, output = model.forward(batch_samples_vla) # TODO make vlm and action loss
-            # dist.barrier()
-            # vlm_loss = output.vlm_loss
-            # dist.barrier()
-            total_loss += action_loss.detach().float()
-        accelerator.backward(action_loss)
+            action_loss, action_vlm_loss = model.forward(batch_samples_vla) # TODO make vlm and action loss
+
+        accelerator.backward(action_loss+action_vlm_loss)
         
         # 会导致 爆内存， 看来要用 flash attention, 但是不清楚会对 action有什么影响。 TODO 先取消掉 多轮对话？和使用 data-flatten
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            # print(batch_samples_vlm["input_ids"].shape, batch_samples_vlm["pixel_values"].shape)
-
             output = model.qwen_vl_interface(**batch_samples_vlm) # TODO make vlm and action loss
             vlm_loss = output.loss * cfg.trainer.loss_scale.vlm 
             # dist.barrier()
@@ -195,7 +186,8 @@ def trainer(model, vla_train_dataloader,vlm_train_dataloader, optimizer, lr_sche
                 lr = lr_scheduler.get_last_lr()[0]
                 epoch = int(completed_steps) // len(vla_train_dataloader) # 他们都是经过 DDP的
                 result = {
-                    "train_loss": action_loss.item(),
+                    "action_dit_loss": action_loss.item(),
+                    "action_vlm_loss": action_vlm_loss.item(),
                     "vlm_loss": vlm_loss.item(),
                     "grad_norm": total_norm,
                     "learning_rate": lr,
@@ -219,11 +211,11 @@ def trainer(model, vla_train_dataloader,vlm_train_dataloader, optimizer, lr_sche
                 
                 torch.save(state_dict, output_path+"_pytorch_model.pt")
                 print(f"✅ Saved state_dict to {output_path}")
-                summary_data = {"steps": completed_steps, "train_loss": total_loss.item()/cfg.save_interval}
+                summary_data = {"steps": completed_steps, "train_loss": action_vlm_loss.item()}
                 with open(os.path.join(cfg.output_dir, "summary.jsonl"), "a") as f:
                     f.write(json.dumps(summary_data) + "\n")
                 logger.info(f"Checkpoint saved at step {completed_steps}")
-                total_loss = 0.0
+
             accelerator.wait_for_everyone()
             
         # dist.barrier()  # Ensure all processes log at the same time
