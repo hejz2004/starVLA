@@ -59,7 +59,7 @@ class QwenQFormerDiT(nn.Module):
         
         # TODO 全部转 全局config, 要面向对象编程
         self.qwen_vl_interface = get_qwen2_5_interface(qwen_model_name, config) 
-        self.layer_qformer = get_layerwise_qformer(input_hidden_dim=vl_token_dim, output_hidden_dim=action_hidden_dim,config=config) # @Jinhui 需要逻辑从QWen 中对齐 hidden
+        self.layer_qformer = get_layerwise_qformer(config=config) # @Jinhui 需要逻辑从QWen 中对齐 hidden
         self.action_model = ActionModel(model_type = action_model_type,  # TODO @Jinhui 应该写到 get_action_model()
                                             action_hidden_dim = action_hidden_dim, # 这些参数关系要 TODO集中 设置到config
                                             in_channels = action_dim, 
@@ -116,18 +116,11 @@ class QwenQFormerDiT(nn.Module):
         with torch.autocast("cuda", dtype=torch.float16):
             # dist.barrier()  # 确保所有进程都加载完毕
             qwenvl_outputs = self.qwen_vl_interface( # 都是local的参数变化， 不要写到config, 但是为了保持可复现，应该有个默认的 yaml
-                # input_ids=qwen_inputs.input_ids,
-                # attention_mask=qwen_inputs.attention_mask,
-                # pixel_values=qwen_inputs.pixel_values, # [512, 1176] 石斛没有 B,  
-                # image_grid_thw =qwen_inputs.image_grid_thw, # 2* [1,16,16] --> 512 = 16*16*2, 1176 = (224/16)^2 * 3 * 2 @JinhuiYE TODO 这个需要找Qwen 的官方文档验证
-                # labels= qwen_inputs.labels,
-                # position_ids=qwen_inputs.position_ids,
                 **qwen_inputs, # 兼容性和可读性的 trade off
                 # use_cache=use_cache,
                 output_attentions=False, # Flash attention 还不确定是否支持返回attention， 官方代码有bug
                 output_hidden_states=True,
                 return_dict=True,
-                # past_key_values=past_key_values,
                 # **kwargs
                 )
             pass
@@ -208,8 +201,8 @@ class QwenQFormerDiT(nn.Module):
             ) # generation 拿不到前面token 的信息，考虑使用 forward?
 
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            start_layer = self.config.vla.qformer_start_layer if self.config else -6  # @Jinhui TODO 这里应该是config
-            end_layer = self.config.vla.qformer_end_layer if self.config else -1  # @Jinhui TODO 这里应该是config
+            start_layer = self.config.framework.layer_qformer.qformer_start_layer 
+            end_layer = self.config.framework.layer_qformer.qformer_end_layer
             
             action_latent_feature = self.layer_qformer(qwenvl_outputs.hidden_states[start_layer:end_layer]) # [B, 64, D_action]
             
@@ -348,8 +341,9 @@ class QwenQFormerDiT(nn.Module):
             ], dim=2)  # Shape: [num_layers, B, total_len, hidden_dim]
 
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            start_layer = self.config.vla.qformer_start_layer
-            end_layer = self.config.vla.qformer_end_layer
+            start_layer = self.config.framework.layer_qformer.qformer_start_layer # TODO 这些模型framework 层面的setting 应该放到 initial 中就拿到？ 还是全局统一 在参数中拿到？
+            end_layer = self.config.framework.layer_qformer.qformer_end_layer
+            
             latent_features = []
             # TODO 上面为可读性，牺牲了速度, 稳定后可以考虑 只转换需要用的feature
             for i in range(start_layer, end_layer):
@@ -419,8 +413,8 @@ class QwenQFormerDiT(nn.Module):
           - frozen: 实际找到并冻结的模块路径列表
         """
         freeze_modules = ( # 我觉得全局就应该只有一个config， 使用没必要相对路径
-            self.config.vla.freeze_modules
-            if (self.config and hasattr(self.config.vla, "freeze_modules"))
+            self.config.trainer.freeze_modules
+            if (self.config and hasattr(self.config.trainer, "freeze_modules"))
             else None
         )
         # 拆分并去除空白
@@ -458,8 +452,8 @@ class QwenQFormerDiT(nn.Module):
         """
         # TODO 好像就没有执行这里
         # print("好像就没有执行这里"*100)
-        checkpoint_path = getattr(self.config.vla, "pretrained_checkpoint", None)
-        reload_module_name = getattr(self.config.vla, "reload_modules", None)
+        checkpoint_path = getattr(self.config.trainer, "pretrained_checkpoint", None)
+        reload_module_name = getattr(self.config.trainer, "reload_modules", None)
 
         if not checkpoint_path:
             return []  
@@ -524,7 +518,7 @@ class QwenQFormerDiT(nn.Module):
         # TODO 
         config = dict_to_namespace(model_config)
         model_config = config # TODO 不要使用相对变量 model_config， 需要换名字
-        model_config.vla.pretrained_checkpoint = None # 为了加快加载速度，避免重复加载， TODO 其实不应该在initial的位置设置 load_pretrained_backbones
+        model_config.trainer.pretrained_checkpoint = None # 为了加快加载速度，避免重复加载， TODO 其实不应该在initial的位置设置 load_pretrained_backbones
         qwenQFormerACT = build_model_framework(model_config) 
         # set for action un-norm
         qwenQFormerACT.norm_stats = norm_stats
@@ -587,13 +581,13 @@ def build_model_framework(model_config: dict = {}) -> QwenQFormerDiT:
     qwen_model_name='/mnt/petrelfs/yejinhui/Projects/llavavla/playground/Pretrained_models/Qwen2.5-VL-3B-Instruct',
     action_model_type='DiT-B',
     vl_token_dim=2048,
-    action_dim=model_config.vla.action_dim if hasattr(model_config.vla, 'action_dim') else 7,  # @Jinhui TODO 这里应该是config
+    action_dim=model_config.framework.action_model.action_dim,
     future_action_window_size=15,
     past_action_window_size=0,
     # use_ema=False,
     config=model_config
     )
-    if (hasattr(model_config.vla, 'pretrained_checkpoint') and model_config.vla.pretrained_checkpoint):
+    if (hasattr(model_config.trainer, 'pretrained_checkpoint') and model_config.trainer.pretrained_checkpoint):
         # overwatch.info(f"Loading pretrained backbones from `{model_config.vla.pretrained_checkpoint}`")
         model.load_pretrained_backbones(model_config)
         
