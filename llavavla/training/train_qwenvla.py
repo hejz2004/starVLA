@@ -22,9 +22,9 @@ from tqdm import tqdm
 from transformers import AutoProcessor, get_scheduler
 
 # Local Modules
-from llavavla.training.metrics import normalize_dotlist_args # TODO 封装成为一个特殊的 arg 类别  --> 参数使用 yaml + .sh 控制， 单例模式
+from llavavla.training.trainer_utils.metrics import normalize_dotlist_args # TODO 封装成为一个特殊的 arg 类别  --> 参数使用 yaml + .sh 控制， 单例模式
 from llavavla.model.framework import build_framework
-from llavavla.training.metrics import TrainerUtils
+from llavavla.training.trainer_utils.metrics import TrainerUtils
 
 
 
@@ -80,21 +80,10 @@ from llavavla.dataloader import build_dataloader
 
 def prepare_data(cfg, accelerator, output_dir) -> Tuple[DataLoader, DataLoader]:
     """准备训练数据"""
-    # VLA 数据集
-    logger.info(f"Creating VLA Open-X Dataset with Mixture `{cfg.datasets.vla_data.data_mix}`")
-    vla_dataset, collate_fn = build_dataloader( # 这个写在dataload.py 内部
-        cfg=cfg)
     # VLA 数据加载器
-    vla_train_dataloader = DataLoader(
-        vla_dataset,
-        batch_size=cfg.datasets.vla_data.per_device_batch_size,
-        collate_fn=collate_fn,
-        num_workers=16, # TODO uncheck feature? --> 好像读取数据这个没有生效？
-    )
-
-    # 保存数据集统计信息
-    if accelerator.is_main_process: # TODO 后续要考虑统一判断 rank = 0
-        statistics_data = vla_dataset.save_dataset_statistics(output_dir / "dataset_statistics.json")
+    logger.info(f"Creating VLA Open-X Dataset with Mixture `{cfg.datasets.vla_data.data_mix}`")
+    vla_train_dataloader = build_dataloader( # 这个写在dataload.py 内部
+        cfg=cfg)
     
     # 拒绝自动分发 # TODO 应该写到 accelerator config
     accelerator.dataloader_config.dispatch_batches =  False
@@ -375,7 +364,7 @@ class VLATrainer(TrainerUtils):
             actions = [example["action"] for example in examples] #label
 
             # Predict actions using the model
-            predicted_solutions, normalized_actions = self.model.predict_action_withCoT( # TODO 这里有 模型方法 依赖关系, 如果你要保持trainer的独立性，这里应该怎么设计？
+            predicted_solutions, normalized_actions = self.model.predict_action( # TODO 这里有 模型方法 依赖关系, 如果你要保持trainer的独立性，这里应该怎么设计？
                 images=images,
                 instructions=instructions,
                 use_ddim=True,
@@ -430,7 +419,7 @@ class VLATrainer(TrainerUtils):
             # 梯度裁剪
             if self.config.trainer.gradient_clipping is not None:
                 self.accelerator.clip_grad_norm_(
-                    self.model.parameters(), 
+                    self.model.parameters(),
                     self.config.trainer.gradient_clipping
                 )
             
@@ -460,7 +449,7 @@ class VLATrainer(TrainerUtils):
         
         self.accelerator.wait_for_everyone()
 
-from llavavla.training.metrics import build_param_lr_groups
+from llavavla.training.trainer_utils.metrics import build_param_lr_groups
 def main(cfg) -> None:
     logger.info("VLA Training :: Warming Up")
 
