@@ -27,7 +27,7 @@ IGNORE_INDEX = -100
 
 from InternVLA.model.framework.base_framework import baseframework
 from InternVLA.model.modules.vlm.QWen2_5 import get_qwen2_5_interface
-from InternVLA.model.modules.action_model.oft_action_head import get_action_model
+from InternVLA.model.modules.action_model.MLP_ActionHeader import get_action_model
 from InternVLA.training.trainer_utils.metrics import resize_images
 
 
@@ -66,7 +66,7 @@ class Qwenvl_OFT(baseframework):
         self.chunk_len = self.past_action_window_size + 1 + self.future_action_window_size
         self.hidden_dim = config.framework.action_model.action_hidden_dim
         
-        self.action_token = "🔍"
+        self.action_token = "🔍" # TODO also can add spacail token to Qwen, but too complex
         self.action_token_id = self.qwen_vl_interface.processor.tokenizer("🔍", add_special_tokens=False)["input_ids"][0]
 
         # L1 损失

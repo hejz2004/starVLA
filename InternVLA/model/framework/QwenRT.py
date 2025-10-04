@@ -1,0 +1,270 @@
+"""
+Qwenvl OFT framework:
+Vision-Language-Action diffusion model integrating:
+  - Qwen2.5 vision-language backbone
+  - learnable raw action token + positional embeddings for action sequences len = action chunk
+  - DiT diffusion head for future action sequence prediction
+Primary goal: predict continuous future actions special token conditioned on multi-view images + instruction.
+"""
+
+from typing import List
+from tqdm import tqdm
+from typing import List, Optional, Tuple
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from PIL import Image
+from qwen_vl_utils import process_vision_info
+
+
+from InternVLA.training.trainer_utils import initialize_overwatch
+
+logger = initialize_overwatch(__name__)
+
+# HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
+IGNORE_INDEX = -100
+
+from InternVLA.model.framework.base_framework import baseframework
+from InternVLA.model.modules.vlm.QWen2_5 import get_qwen2_5_interface
+from InternVLA.model.modules.action_model.fast_ActionHeader import get_action_model
+from InternVLA.training.trainer_utils.metrics import resize_images
+
+
+class Qwenvl_RT(baseframework):
+    """
+    Multimodal vision-language-action model.
+
+    Components:
+      - Qwen2.5 VL interface for fused language/vision token embeddings
+      - Layer-wise QFormer for multi-layer feature aggregation
+      - DINO encoder for dense multi-view spatial tokens
+      - DiT diffusion head for future action sequence modeling
+
+    Focus: Predict future continuous actions conditioned on images + instruction.
+    """
+
+    def __init__(
+        self,
+        config: Optional[dict] = None,
+        **kwargs,
+    ) -> None:
+        """
+        Construct all submodules and cache key configuration values.
+
+        Args:
+            config: Hierarchical configuration (OmegaConf/dict) containing framework + trainer sections.
+            **kwargs: Reserved for future overrides (unused).
+        """
+        super().__init__()
+        self.config = config
+        self.qwen_vl_interface = get_qwen2_5_interface(config=self.config)
+        self.action_model = get_action_model(config=self.config)
+
+        self.future_action_window_size = config.framework.action_model.future_action_window_size
+        self.past_action_window_size = config.framework.action_model.past_action_window_size
+        self.chunk_len = self.past_action_window_size + 1 + self.future_action_window_size
+        self.hidden_dim = config.framework.action_model.action_hidden_dim
+        
+
+    def forward(
+        self,
+        examples: List[dict] = None,
+        **kwargs,
+    ) -> Tuple:
+        """
+        训练前向：直接next token prediction 预测未来动作（无扩散）。
+
+        Flow:
+          1. Build QwenVL inputs (images + instruction tokens)
+          2. Extract hidden states from configured layer range
+          7. Predict action and compute L1 loss
+
+        Args:
+            examples: List[dict], each dict requires:
+                - image: List[PIL.Image] (multi-view)
+                - lang: str instruction
+                - action: np.ndarray or list shaped [T, action_dim]
+            **kwargs: Reserved.
+
+        Returns:
+            dict:
+                action_loss (torch.Tensor): Scalar diffusion noise prediction loss.
+        """
+        batch_images = [example["image"] for example in examples]  #  [B，[PLT]]
+        instructions = [example["lang"] for example in examples]  # [B, str]
+        actions = [example["action"] for example in examples]  # label [B， len, 7]
+        
+        # step 0: map_raw_action_to_vlm_action
+        vlm_action_tokens = self.action_model.encoder_action2vlmtoken(actions)  # List[str]
+
+
+        # Step 1: QWenVL input format
+        qwen_inputs = self.qwen_vl_interface.build_qwenvl_train_inputs(images=batch_images, instructions=instructions, solutions=vlm_action_tokens)
+        qwen_inputs_v1 = self.qwen_vl_interface.build_qwenvl_inputs(images=batch_images, instructions=instructions, solutions=vlm_action_tokens)
+        
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            qwenvl_outputs = self.qwen_vl_interface(
+                **qwen_inputs,
+                output_attentions=False,
+                output_hidden_states=False,
+                return_dict=True,
+            )
+        
+        vlm_action_loss = qwenvl_outputs.loss
+        if vlm_action_loss is None or torch.isnan(vlm_action_loss): 
+            vlm_action_loss = torch.tensor(0.0, device=self.qwen_vl_interface.model.device)
+
+        return {"action_loss": vlm_action_loss}
+
+    @torch.inference_mode()
+    def predict_action(
+        self,
+        batch_images: List[List[Image.Image]],  # Batch of PIL Image list as [view1, view2]
+        instructions: List[str],
+        **kwargs: str,
+    ) -> np.ndarray:
+        """
+        推理：单次前向直接回归未来动作（无扩散采样）。
+
+        Steps:
+          1. Resize images to training resolution (if specified)
+          2. Encode with QwenVL (hidden states retained)
+          6. Return normalized action trajectory
+
+        Args:
+            batch_images: List of samples; each sample is List[PIL.Image] (multi-view).
+            instructions: List[str] natural language task instructions.
+            cfg_scale: >1 enables classifier-free guidance (scales conditional vs unconditional).
+            use_ddim: Whether to use DDIM deterministic sampling.
+            num_ddim_steps: Number of DDIM steps if enabled.
+            **kwargs: Reserved.
+
+        Returns:
+            dict:
+                normalized_actions (np.ndarray): Shape [B, T, action_dim], diffusion-sampled normalized actions.
+        """
+        train_obs_image_size = getattr(self.config.datasets.vla_data, "image_size", None)
+        if train_obs_image_size:
+            batch_images = resize_images(batch_images, target_size=train_obs_image_size)
+        instructions = [instruction for instruction in instructions]
+
+
+        # Step 1: QWenVL input format
+        qwen_inputs = self.qwen_vl_interface.build_qwenvl_inputs(images=batch_images, instructions=instructions)
+
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            generated_ids = self.qwen_vl_interface.generate(
+                **qwen_inputs,
+            )
+
+        # decoder vlm_action to continue actions
+        
+        return {"normalized_actions": 1}
+
+    def _gather_action_token_embeddings(
+        self,
+        last_hidden: torch.Tensor,   # [B, L, H]
+        input_ids: torch.Tensor,     # [B, L]
+        action_token_id=None,        # 可为 int 或 List[int]
+    ) -> torch.Tensor:
+        """
+        向量化批量提取动作 token embedding:
+          - 不再逐样本 for 循环
+          - 取每个样本里最靠后的 chunk_len 个动作占位 token
+        Args:
+            last_hidden: [B, L, H]
+            input_ids:   [B, L]
+            action_token_id: int 或 List[int]
+        Returns:
+            action_queries: [B, chunk_len, H]
+        """
+        if action_token_id is None:
+            raise ValueError("action_token_id 不能为空")
+
+        device = input_ids.device
+        B, L, H = last_hidden.shape
+
+        # 支持多 id（如多个变体）
+        if isinstance(action_token_id, (list, tuple, set)):
+            id_list = torch.tensor(list(action_token_id), device=device, dtype=input_ids.dtype)
+            # torch.isin 需要 PyTorch >=1.10
+            mask = torch.isin(input_ids, id_list)
+        else:
+            mask = (input_ids == action_token_id)  # [B, L]
+
+        counts = mask.sum(dim=1)  # [B]
+        if (counts < self.chunk_len).any():
+            insufficient = (counts < self.chunk_len).nonzero(as_tuple=False).flatten().tolist()
+            raise RuntimeError(
+                f"以下样本动作 token 数量不足 {self.chunk_len}: {insufficient} | counts={counts.tolist()}"
+            )
+
+        # 位置索引
+        idx = torch.arange(L, device=device).unsqueeze(0).expand(B, L)  # [B, L]
+        masked_pos = torch.where(mask, idx, torch.full_like(idx, -1))   # 非动作位置置 -1
+
+        # 取最后 chunk_len 个（索引大的在序列靠后）
+        # 注意: 已确保数量足够，不会出现 -1 被错误选中的问题
+        topk_pos = masked_pos.topk(k=self.chunk_len, dim=-1).values     # [B, chunk_len] 未排序
+        # 时间顺序排序
+        selected_pos = topk_pos.sort(dim=-1).values                     # [B, chunk_len]
+
+        # Gather
+        expanded_index = selected_pos.unsqueeze(-1).expand(-1, -1, H)   # [B, chunk_len, H]
+        action_queries = last_hidden.gather(dim=1, index=expanded_index)  # [B, chunk_len, H]
+        return action_queries
+
+def build_model_framework(config: dict = {}) -> Qwenvl_RT:
+    """
+    工厂方法：返回简化版 Qwenvl_OFT
+    """
+    model = Qwenvl_RT(config=config)
+    return model
+
+
+if __name__ == "__main__":
+    from omegaconf import OmegaConf
+
+    # model parameters
+    import debugpy
+
+    debugpy.listen(("0.0.0.0", 10092))
+    print("🔍 Rank 0 waiting for debugger attach on port 10092...")
+    debugpy.wait_for_client()
+
+    config_yaml = "InternVLA/config/training/internvla_cotrain_oxe.yaml"
+    cfg = OmegaConf.load(config_yaml)
+    cfg.framework.qwenvl.base_vlm = "playground/Pretrained_models/nora"
+
+    cfg.framework.action_model.action_hidden_dim 
+    # try get model
+    model = build_model_framework(cfg)
+    print(model)
+
+    # try forward model
+    # can be fake sample， but here get from dataloader for simpler
+    from InternVLA.dataloader.lerobot_datasets import get_vla_dataset, collate_fn
+
+    vla_dataset_cfg = cfg.datasets.vla_data
+    dataset = get_vla_dataset(data_cfg=vla_dataset_cfg)
+
+    from torch.utils.data import DataLoader
+
+    train_dataloader = DataLoader(
+        dataset,
+        batch_size=2,
+        num_workers=1,  # For Debug
+        collate_fn=collate_fn,
+    )
+    # zhe
+    for batch in tqdm(train_dataloader, desc="Processing Batches"):
+        batch
+        break
+
+    # try get model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    model(batch)
+    pass
+    action = model.predict_action(batch_images=[batch[0]["image"]], instructions=[batch[0]["lang"]])
