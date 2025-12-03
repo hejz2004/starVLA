@@ -174,7 +174,7 @@ class Qwen_GR00T(baseframework):
 
         state = torch.from_numpy(np.array(state)).to(last_hidden.device, dtype=last_hidden.dtype) if state is not None else None
         
-        # Step 4: Action Expert Forward and Loss
+        # Step 4: Action Expert Forward
         with torch.autocast("cuda", dtype=torch.float32):
             pred_actions = self.action_model.predict_action(last_hidden, state)  # (B, chunk_len, action_dim)
 
