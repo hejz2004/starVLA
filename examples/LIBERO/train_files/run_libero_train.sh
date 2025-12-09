@@ -6,8 +6,8 @@ export NCCL_IB_HCA=mlx5_2,mlx5_3
 # used for check save when communication
 export NCCL_BLOCKING_WAIT=1
 export NCCL_ASYNC_ERROR_HANDLING=1
-export NCCL_TIMEOUT=1000  # timeout set to 1 hour (unit: seconds)
-
+export NCCL_TIMEOUT=10000  # timeout set to 1 hour (unit: seconds)
+export NCCL_SOCKET_TIMEOUT_MS=360000
 ###########################################################################################
 # === Please modify the following paths according to your environment ===
 Framework_name=QwenFast
@@ -22,7 +22,7 @@ run_id=1207_libero4in1_qwen3fast
 ###########################################################################################
 
 
-# export WANDB_MODE=disabled
+export WANDB_MODE=disabled
 
 output_dir=${run_root_dir}/${run_id}
 mkdir -p ${output_dir}
@@ -33,7 +33,7 @@ cp $0 ${output_dir}/
 accelerate launch \
   --config_file starVLA/config/deepseeds/deepspeed_zero2.yaml \
   --num_processes 8 \
-  starVLA/training/train_starvla.py \
+  starVLA/training/train_starvla_cotrain.py \
   --config_yaml ${config_yaml} \
   --framework.name ${Framework_name} \
   --framework.qwenvl.base_vlm ${base_vlm} \
