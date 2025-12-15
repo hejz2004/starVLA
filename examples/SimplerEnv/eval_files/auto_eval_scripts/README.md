@@ -1,6 +1,7 @@
+# Auto Evaluation Scripts
 
+This folder contains the scripts we use internally to run quick evaluations across every task.
+A fully automated run depends on our in-house platform setup, so the scripts may not work unchanged on your own infrastructure.
+Please treat them as references and consult `run_policy_server.sh` and `start_simpler_env.sh` for the underlying workflow.
 
-# 这里包含了我们自己内部使用的 全部标本， 它们用于先快速的评测 全部task。
-# 全自动评测 会和使用的平台有些绑定，使用我们无法确定是否在用户自己的平台依然有效，
-# 我们发出来只是提供更多的参考， 具体原理还是参考 `run_policy_server.sh` 和 `start_simpler_env.sh`
 
