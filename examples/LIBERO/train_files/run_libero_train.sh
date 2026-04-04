@@ -49,19 +49,19 @@ export NCCL_SOCKET_TIMEOUT_MS=360000
 # === Please modify the following paths according to your environment ===
 cd /home/jye624/Projcets/starVLA
 
-Framework_name=CosmoPredict2GR00T
+Framework_name=CosmoPredict2OFT
 freeze_module_list=''
 base_vlm=/home/jye624/Models/Pretrained_models/Qwen3-VL-4B-Instruct
 config_yaml=./examples/LIBERO/train_files/starvla_cotrain_libero.yaml
 libero_data_root=/home/jye624/Datasets/LIBERO
 data_mix=libero_all
 run_root_dir=./results/Checkpoints
-run_id=1229_libero4in1_qwen3oft
+run_id=0405_libero4in1_${Framework_name}
 # === End of environment variable configuration ===
 ###########################################################################################
 
 
-export WANDB_MODE=disabled
+# export WANDB_MODE=disabled
 
 
 output_dir=${run_root_dir}/${run_id}
@@ -70,9 +70,11 @@ mkdir -p ${output_dir}
 cp $0 ${output_dir}/
 
 num_processes=${NUM_PROCESSES:-$(nvidia-smi -L | wc -l)}
-per_device_batch_size=${PER_DEVICE_BATCH_SIZE:-2}
 attn_implementation=${ATTN_IMPLEMENTATION:-sdpa}
 accelerate_config_file=${ACCELERATE_CONFIG_FILE:-starVLA/config/deepseeds/deepspeed_zero2.yaml}
+main_process_port=${MAIN_PROCESS_PORT:-29501}
+
+export WANDB_API_KEY=${WANDB_API_KEY:-943ecb8d26fc2b3879cbc2d667414974906aebb9}
 
 
 # Fix: ensure vonneumann1 group is active for NFS file access on compute nodes
@@ -91,6 +93,7 @@ ${CONDA_INIT} && \
 accelerate launch \
   --config_file ${accelerate_config_file} \
   --num_processes ${num_processes} \
+  --main_process_port ${main_process_port} \
   starVLA/training/train_starvla.py \
   --config_yaml ${config_yaml} \
   --framework.name ${Framework_name} \
@@ -99,7 +102,7 @@ accelerate launch \
   --framework.action_model.past_action_window_size 0 \
   --datasets.vla_data.data_root_dir ${libero_data_root} \
   --datasets.vla_data.data_mix ${data_mix} \
-  --datasets.vla_data.per_device_batch_size ${per_device_batch_size} \
+  --datasets.vla_data.per_device_batch_size 8 \
   --trainer.vla_data.video_backend torchvision_av \
   --framework.qwenvl.attn_implementation ${attn_implementation} \
   --trainer.freeze_modules ${freeze_module_list} \
