@@ -1,18 +1,22 @@
 #!/bin/bash
 #SBATCH --account=vonneumann1
 #SBATCH --partition=vonneumann
-#SBATCH --gpus=4
+#SBATCH --gpus-per-node=8
 #SBATCH --nodes=1
-#SBATCH --time=8:00:00
+#SBATCH --ntasks-per-node=1
+#SBATCH --time=48:00:00
 #SBATCH --job-name=libero_train
 #SBATCH --output=logs/train_%j.log
 #SBATCH --error=logs/train_%j.err
 #
-# Usage:
+# Usage (single-node):
 #   sbatch examples/LIBERO/train_files/sbatch_libero_train.sh
 #
-# Override GPU count:
-#   sbatch --gpus=4 examples/LIBERO/train_files/sbatch_libero_train.sh
+# Usage (multi-node, e.g. 2 nodes × 8 GPUs = 16 GPUs):
+#   sbatch --nodes=2 examples/LIBERO/train_files/sbatch_libero_train.sh
+#
+# Override GPU count per node:
+#   sbatch --gpus-per-node=4 examples/LIBERO/train_files/sbatch_libero_train.sh
 #
 set -e
 
@@ -73,24 +77,38 @@ per_device_batch_size=8
 ###########################################################################################
 
 export WANDB_API_KEY=${WANDB_API_KEY:-943ecb8d26fc2b3879cbc2d667414974906aebb9}
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 output_dir=${run_root_dir}/${run_id}
 mkdir -p ${output_dir} logs/
 cp $0 ${output_dir}/
 
-# Auto-detect GPU count from SLURM allocation
-num_processes=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
+# Auto-detect single-node vs multi-node from SLURM allocation
+NNODES=${SLURM_NNODES:-1}
+GPUS_PER_NODE=${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}
+TOTAL_GPUS=$((NNODES * GPUS_PER_NODE))
 attn_implementation=sdpa
 accelerate_config_file=starVLA/config/deepseeds/deepspeed_zero2.yaml
-main_process_port=${MAIN_PROCESS_PORT:-29501}
+
+# Multi-node: need a fixed port for cross-node communication
+# Single-node: use 0 to auto-select and avoid conflicts
+if [ "$NNODES" -gt 1 ]; then
+  MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
+  MASTER_PORT=${MAIN_PROCESS_PORT:-$((29500 + SLURM_JOB_ID % 1000))}
+else
+  MASTER_ADDR="127.0.0.1"
+  MASTER_PORT=${MAIN_PROCESS_PORT:-0}
+fi
 
 echo "=============================="
 echo "Job ID:       ${SLURM_JOB_ID}"
-echo "Node:         ${SLURM_NODELIST}"
-echo "GPUs:         ${num_processes}"
+echo "Nodes:        ${SLURM_NODELIST} (${NNODES} nodes)"
+echo "GPUs/node:    ${GPUS_PER_NODE}"
+echo "Total GPUs:   ${TOTAL_GPUS}"
 echo "Batch/GPU:    ${per_device_batch_size}"
 echo "Framework:    ${Framework_name}"
 echo "Run ID:       ${run_id}"
+echo "Master:       ${MASTER_ADDR}:${MASTER_PORT}"
 echo "=============================="
 
 sg vonneumann1 -c "
@@ -98,8 +116,11 @@ source /cm/shared/apps/Anaconda3/2023.09-0/etc/profile.d/conda.sh && \
 conda activate starVLA && \
 accelerate launch \
   --config_file ${accelerate_config_file} \
-  --num_processes ${num_processes} \
-  --main_process_port ${main_process_port} \
+  --num_processes ${TOTAL_GPUS} \
+  --num_machines ${NNODES} \
+  --machine_rank \${SLURM_PROCID:-0} \
+  --main_process_ip ${MASTER_ADDR} \
+  --main_process_port ${MASTER_PORT} \
   starVLA/training/train_starvla.py \
   --config_yaml ${config_yaml} \
   --framework.name ${Framework_name} \
