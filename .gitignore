@@ -253,13 +253,5 @@ logs/*
 bar
 **/.nf*
 code
-examples/realRobots/RoboChallenge_table30v2/*
 examples/simBenchmarks/LIBERO/eval_files/auto_eval_scripts/run_all_libero_untested.sh
-examples/simBenchmarks/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
-examples/simBenchmarks/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
-examples/simBenchmarks/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
-examples/simBenchmarks/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
-examples/simBenchmarks/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
-examples/simBenchmarks/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
-examples/simBenchmarks/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
 starVLA/model/framework/VLM4A/QwenGR00T_v2.py
