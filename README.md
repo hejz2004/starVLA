@@ -366,11 +366,11 @@ StarVLA is released under the MIT License, which permits commercial use, modific
 
 ```bibtex
 
-@article{ye2026starvla,
+@inproceedings{ye2026starvla,
   title={StarVLA-$$\backslash$alpha $: Reducing Complexity in Vision-Language-Action Systems},
   author={Ye, Jinhui and Gao, Ning and Yang, Senqiao and Zheng, Jinliang and Wang, Zixuan and Chen, Yuxin and Chen, Pengguang and Chen, Yilun and Liu, Shu and Jia, Jiaya},
-  journal={arXiv preprint arXiv:2604.11757},
-  year={2026}
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2026}
 }
 
 @article{community2026starvla,
