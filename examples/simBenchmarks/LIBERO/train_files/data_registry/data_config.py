@@ -64,8 +64,41 @@ class Libero4in1DataConfig:
         ])
 
 
+class OpenPILibero4in1DataConfig(Libero4in1DataConfig):
+    def transform(self):
+        return ComposedModalityTransform(transforms=[
+            StateActionToTensor(apply_to=self.state_keys + self.action_keys),
+            StateActionTransform(
+                apply_to=self.state_keys,
+                normalization_modes={
+                    "state.x": "q99",
+                    "state.y": "q99",
+                    "state.z": "q99",
+                    "state.roll": "q99",
+                    "state.pitch": "q99",
+                    "state.yaw": "q99",
+                    "state.pad": "q99",
+                    "state.gripper": "q99",
+                },
+            ),
+            StateActionTransform(
+                apply_to=self.action_keys,
+                normalization_modes={
+                    "action.x": "q99",
+                    "action.y": "q99",
+                    "action.z": "q99",
+                    "action.roll": "q99",
+                    "action.pitch": "q99",
+                    "action.yaw": "q99",
+                    "action.gripper": "q99",
+                },
+            ),
+        ])
+
+
 ROBOT_TYPE_CONFIG_MAP = {
     "libero_franka": Libero4in1DataConfig(),
+    "openpi_libero_franka": OpenPILibero4in1DataConfig(),
 }
 
 
@@ -88,6 +121,12 @@ DATASET_NAMED_MIXTURES = {
         ("libero_goal_no_noops_1.0.0_lerobot", 1.0, "libero_franka"),
         ("libero_spatial_no_noops_1.0.0_lerobot", 1.0, "libero_franka"),
         ("libero_10_no_noops_1.0.0_lerobot", 1.0, "libero_franka"),
+    ],
+    "openpi_libero_all": [
+        ("libero_object_no_noops_1.0.0_lerobot", 1.0, "openpi_libero_franka"),
+        ("libero_goal_no_noops_1.0.0_lerobot", 1.0, "openpi_libero_franka"),
+        ("libero_spatial_no_noops_1.0.0_lerobot", 1.0, "openpi_libero_franka"),
+        ("libero_10_no_noops_1.0.0_lerobot", 1.0, "openpi_libero_franka"),
     ],
     "libero_goal": [
         ("libero_goal_no_noops_1.0.0_lerobot", 1.0, "libero_franka"),
