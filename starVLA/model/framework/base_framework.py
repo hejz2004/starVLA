@@ -102,6 +102,19 @@ def build_framework(cfg): # The single entry point for building different model 
             f"Framework `{framework_id}` is not implemented. Available frameworks: {available}"
         )
 
+    # This applies to every evaluation model, not to one framework or one
+    # known compatibility issue: the repository is continuously updated, so a
+    # released HF checkpoint may correspond to an older code/config/eval
+    # snapshot. Reproduce it with the repository revision from its release or
+    # training time and the checkpoint's own configuration.
+    logger.warning(
+        "[StarVLA] Reproducibility notice: this repository is under active development. "
+        "The latest code may not exactly reproduce every previously released HF "
+        "checkpoint because code, configs, preprocessing, and evaluation behavior "
+        "can change over time. For exact reproduction, checkout the repository "
+        "revision from the checkpoint's release/training time and use its own config."
+    )
+
     model_class = FRAMEWORK_REGISTRY[framework_id]
     return model_class(cfg)
 
