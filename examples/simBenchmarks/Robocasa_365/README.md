@@ -1,14 +1,30 @@
 # RoboCasa365 (PandaOmron)
 
-This directory contains StarVLA data registration, training, and evaluation
-examples for the official [RoboCasa365](https://robocasa.ai/) benchmark using
-the mobile single-arm PandaOmron robot.
+This directory contains StarVLA training and evaluation recipes for the
+official [RoboCasa365](https://robocasa.ai/) benchmark using the mobile
+single-arm PandaOmron robot. It covers the 50 target tasks, four locally tested
+StarVLA policy variants, and restartable multi-lane evaluation in target
+kitchens.
 
 > [!IMPORTANT]
 > The NVIDIA GR1 tabletop fork under
 > [`examples/simBenchmarks/Robocasa_tabletop`](../Robocasa_tabletop/README.md)
 > is a different benchmark. Its checkpoints, observation/action contracts, and
 > scores are not interchangeable with RoboCasa365.
+
+## Status and headline results
+
+The latest complete local result snapshot is **2026-08-30**. Every reported
+variant below completed all **50 tasks × 50 rollouts = 2,500 rollouts** with
+RoboCasa **v1.0.1** task-specific horizons in target kitchens.
+
+- Best local overall: **StarVLA-PI at 150k — 40.64% (1,016/2,500)**.
+- Best local Atomic-Seen: **StarVLA-GR00T at 120k — 76.67%**.
+- Best local Composite-Seen: **StarVLA-PI at 150k — 39.38%**.
+- Best local Composite-Unseen: **StarVLA-OFT at 220k — 15.12%**.
+
+The aggregate and per-task scores for all four variants are included in
+[Archived local research snapshot](#7-archived-local-research-snapshot).
 
 ## What is included
 
@@ -354,6 +370,26 @@ Do not insert the archived StarVLA numbers into the official multi-task
 leaderboard as ranks. The official leaderboard protocol uses different
 pretraining data and evaluation kitchens, while the runs above use target-task
 data and target kitchens.
+
+### Illustrative comparison with the official leaderboard
+
+The [official RoboCasa365 leaderboard](https://robocasa.ai/leaderboard.html)
+was last updated on 2026-09-01 and lists 13 verified models. If the four local
+StarVLA checkpoints were inserted simultaneously and sorted only by overall
+success rate, their numerical positions would be:
+
+| Illustrative position | Local checkpoint | Overall | Why this is not an official rank |
+| ---: | --- | ---: | --- |
+| 3 | **StarVLA-PI** | **40.64%** | seen-34 target-task training; target kitchens; not submitted |
+| 6 | **StarVLA-GR00T** | **39.24%** | seen-34 target-task training; target kitchens; not submitted |
+| 9 | **StarVLA-OFT** | **33.32%** | target-50 training; target kitchens; not submitted |
+| 10 | **StarVLA-OFT (no state)** | **30.92%** | target-50 training; target kitchens; not submitted |
+
+For context, the nearby verified leaderboard entries are Xiaomi-Robotics-1
+(57.4%), ABot-M0.6 (46.6%), ABot-M0.5 (40.3%), PRTS (39.6%), RLDX-1
+(36.0%), and WorldDreamer (35.3%). Protocol differences prevent an official
+rank claim; this table is only an arithmetic placement against the current
+published scores.
 
 Useful public references include:
 
