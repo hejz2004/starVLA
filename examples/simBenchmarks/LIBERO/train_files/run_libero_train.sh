@@ -12,7 +12,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../../.." && pwd)"
 cd "${repo_root}"
 
-config_yaml="${CONFIG_YAML:-${script_dir}/starvla_dualstream_libero_action_goals.yaml}"
+config_yaml="${CONFIG_YAML:-${script_dir}/starvla_qwenpi_da3_libero_action_goals.yaml}"
 run_root_dir="${RUN_ROOT_DIR:-./playground/Checkpoints}"
 if (( $# > 1 )); then
     echo "Usage: bash ${BASH_SOURCE[0]} [pretrained_checkpoint_path]" >&2
@@ -33,9 +33,9 @@ if [[ -n "${pretrained_checkpoint}" ]]; then
 fi
 # Give different pretraining weights different output directories by default.
 # RUN_ID remains available to name each comparison explicitly.
-run_prefix=libero_posttrain
-if [[ "$(basename "${config_yaml}")" == starvla_dualstream_libero_action_goals.yaml ]]; then
-    run_prefix=libero_goal_binary_posttrain
+run_prefix=da3_libero_posttrain
+if [[ "$(basename "${config_yaml}")" == starvla_qwenpi_da3_libero_action_goals.yaml ]]; then
+    run_prefix=da3_libero_goal_binary_posttrain
 fi
 if [[ -n "${RUN_ID:-}" ]]; then
     run_id="${RUN_ID}"
@@ -46,7 +46,7 @@ elif [[ -n "${pretrained_checkpoint}" ]]; then
     checkpoint_name="${checkpoint_name%.safetensors}"
     run_id="${run_prefix}_${pretrain_name}_${checkpoint_name}"
 else
-    run_id="${run_prefix}_umi110k"
+    run_id="${run_prefix}_vlm_init"
 fi
 node_rank="${NODE_RANK:-${RANK:-}}"
 num_nodes="${NUM_NODES:-${WORLD_SIZE:-}}"

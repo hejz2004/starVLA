@@ -16,7 +16,7 @@ from starVLA.dataloader.umi_wyt import make_wyt_umi_dataloader, plain_config, re
 from starVLA.training.trainer_utils.umi_stage_data import UMIStageData
 
 
-CONFIG = 'examples/umi/train_files/starvla_dualstream_umi_v2.yaml'
+CONFIG = 'examples/umi/train_files/starvla_qwenpi_da3_umi_v2.yaml'
 
 
 def data_audit(output):

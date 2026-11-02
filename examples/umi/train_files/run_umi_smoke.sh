@@ -11,8 +11,8 @@ export UMI_RESUME=0
 export NODE_RANK=0
 export NUM_NODES=1
 export PROCESSES_PER_NODE="${NUM_PROCESSES:-1}"
-export CONFIG_YAML="${CONFIG_YAML:-${script_dir}/starvla_dualstream_umi_smoke.yaml}"
-export RUN_ID="${RUN_ID:-smoke_umi_wyt_$(date +%Y%m%d_%H%M%S)_$$}"
+export CONFIG_YAML="${CONFIG_YAML:-${script_dir}/starvla_qwenpi_da3_umi_smoke.yaml}"
+export RUN_ID="${RUN_ID:-smoke_qwenpi_da3_umi_wyt_$(date +%Y%m%d_%H%M%S)_$$}"
 export STARVLA_DISABLE_DEEPSPEED="${STARVLA_DISABLE_DEEPSPEED:-1}"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
 exec bash "${script_dir}/run_umi_pretrain_v2.sh" "$@"

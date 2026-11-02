@@ -9,7 +9,6 @@ import torch
 
 from starVLA.dataloader.umi_wyt import resolve_umi_stages
 from starVLA.model.framework.base_framework import baseframework
-from starVLA.model.framework.VLM4A.DualStreamQwenPI import DualStreamQwen_PI
 from starVLA.model.framework.VLM4A.QwenPI import Qwen_PI
 
 
@@ -49,9 +48,8 @@ def forward_probe(cls, repeat):
     torch.testing.assert_close(seen_state,expected_state.repeat(expected_repeat,1,1))
     torch.testing.assert_close(seen_features[0],features[0].repeat(expected_repeat,1,1))
     torch.testing.assert_close(kwargs['encoder_attention_mask'],attention_mask.bool().repeat(expected_repeat,1))
-    if cls is DualStreamQwen_PI:
-        expected_mask = torch.from_numpy(np.stack([mask,np.ones_like(mask)]))
-        torch.testing.assert_close(kwargs['action_mask'],expected_mask.repeat(expected_repeat,1,1))
+    expected_mask = torch.from_numpy(np.stack([mask,np.ones_like(mask)]))
+    torch.testing.assert_close(kwargs['action_mask'],expected_mask.repeat(expected_repeat,1,1))
     assert torch.isfinite(result['action_loss'])
     result['action_loss'].backward()
     assert model.action_model.scale.grad is not None
@@ -63,7 +61,7 @@ def main():
     parser.add_argument('--output',required=True)
     args = parser.parse_args()
     repeats = {}
-    for cls in (DualStreamQwen_PI,Qwen_PI):
+    for cls in (Qwen_PI,):
         repeats[cls.__name__] = {str(value):forward_probe(cls,value) for value in (1,2,3,None)}
         for invalid in (0,-1,True,1.5,'2'):
             try:
@@ -72,7 +70,7 @@ def main():
                 assert 'positive integer' in str(error)
             else:
                 raise AssertionError(f'{cls.__name__} accepted repeat={invalid!r}')
-    cfg = OmegaConf.load('examples/umi/train_files/starvla_dualstream_umi_v2.yaml')
+    cfg = OmegaConf.load('examples/umi/train_files/starvla_qwenpi_da3_umi_v2.yaml')
     assert cfg.framework.action_model.repeated_diffusion_steps == 1
     assert cfg.datasets.vla_data.per_device_batch_size == 32
     assert cfg.trainer.gradient_accumulation_steps == 1
@@ -89,7 +87,7 @@ def main():
     assert [s['steps'] for s in stages] == [15548,15546,15547,15545,15546]
     assert sum(s['steps'] for s in stages) == cfg.trainer.max_train_steps
     assert cfg.datasets.vla_data.stage_total_updates == cfg.trainer.max_train_steps
-    smoke = OmegaConf.load('examples/umi/train_files/starvla_dualstream_umi_smoke.yaml')
+    smoke = OmegaConf.load('examples/umi/train_files/starvla_qwenpi_da3_umi_smoke.yaml')
     assert smoke.framework.action_model.repeated_diffusion_steps == 1
     result = dict(repeat_forward_batch_sizes=repeats,invalid_repeat_rejected=True,
         global_batch_size=2048,total_windows=159198571,stages=stages,

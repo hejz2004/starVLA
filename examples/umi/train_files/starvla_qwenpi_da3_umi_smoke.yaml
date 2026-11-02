@@ -1,11 +1,8 @@
-# DualStreamQwenPI on WYT frozen clean20/sameprompt UMI views.
-# Current 3 images -> future 16 consecutive frames (~0.533 s).
-# Launch once per node: examples/umi/train_files/run_umi_pretrain_v2.sh
-# Defaults: pretrained VLM, state=True, diffusion repeat=1.
-# 64 ranks x 32 samples/rank x accumulation=1 = global batch 2048.
-# One epoch: 159198571 windows, 77732 optimizer updates across five stages.
-# Override state with: --framework.action_model.use_state false
-run_id: starvla_umi_wyt_relative_state_gb2048_r1
+# Single-PPU smoke using the same WYT five-stage data/model definition.
+# Pretrained VLM, state=True, full UMI indexes, no W&B by default.
+# 10 optimizer updates; microbatch=1 x accumulation=16 => effective batch 16.
+# No periodic checkpoint/evaluation; the trainer still writes final_model.
+run_id: da3_smoke_umi_wyt_relative_state
 run_root_dir: playground/Checkpoints
 seed: 42
 wandb_entity: hejz26-tsinghua-university
@@ -14,22 +11,16 @@ is_debug: false
 version_id: "0.21"
 
 framework:
-  name: DualStreamQwenPI
+  name: QwenPI
   qwenvl:
     base_vlm: ./playground/Pretrained_models/Qwen3-VL-2B-Instruct
     load_weights: true
     attn_implementation: sdpa
     vl_hidden_dim: 2048
-    dual_stream:
+    cross_view_attention:
       enabled: true
-      interaction_indexes: [5, 11, 17, 23]
-      num_shared_tokens: 32
-      num_heads: 16
-      intermediate_size: 4096
-      gate_hidden_size: 256
-      gate_init_value: 0.01
-      gate_output_weight_std: 0.001
-      attention_dropout: 0.0
+      # Zero-based: layers 0..15 local; 16,18,20,22 global; 17,19,21,23 local.
+      start_layer: 16
   action_model:
     # bimanual relative-EEF: 2 arms x [dpos(3), quat(4), gripper(1)]
     action_dim: 16
@@ -65,23 +56,21 @@ datasets:
     assets_root: /mnt/workspace/Native_Policy/user/hjz/umi_wyt_assets/clean20_sameprompt_relative_20261015_v1
     umi_root: /mnt/nas/public/roban_umi
     action_pose_repr: current_eef_relative  # Enforced by profile; world is rejected.
-    per_device_batch_size: 32
+    per_device_batch_size: 1
     num_workers: 2
 
 trainer:
   is_resume: false
-  save_full_state: true
+  save_full_state: false
   save_format: pt
-  # One epoch at global batch 2048: sum(floor(stage_windows / 2048)) = 77732.
-  # Stage updates: [15548, 15546, 15547, 15545, 15546]; tail=3435 windows.
-  # If topology/accumulation changes, set null to recalculate one full pass.
-  max_train_steps: 77732
-  num_warmup_steps: 2500
-  # Periodic checkpoints contain model/optimizer/scheduler/RNG and stage cursor.
-  save_interval: 2000
-  # Retain three periodic checkpoints; final_model is saved separately.
-  keep_last_checkpoints: 3
-  eval_interval: 10000000
+  # Cap the same five-stage plan at ten optimizer updates.
+  max_train_steps: 10
+  num_warmup_steps: 0
+  # These intervals exceed the smoke length; final_model is still saved.
+  save_interval: 100000
+  # Retention applies only if the save interval is overridden.
+  keep_last_checkpoints: 1
+  eval_interval: 100000
   learning_rate:
     base: 2.5e-05
     # Flat keys only: build_param_lr_groups recurses module.parameters() without
@@ -97,10 +86,10 @@ trainer:
     vlm: 0.1
   max_grad_norm: 1.0
   weight_decay: 0.0
-  logging_frequency: 10
+  logging_frequency: 1
   gradient_clipping: 1.0
   # Global optimizer batch = per_device_batch_size x world_size x accumulation.
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 16
   gradient_checkpointing: false
 
   optimizer:

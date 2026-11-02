@@ -8,6 +8,8 @@ import torch
 from starVLA.model.tools import has_flash_attn  # unified flash-attn detection (GPU / NPU)
 from starVLA.training.trainer_utils import initialize_overwatch
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig
+from omegaconf import OmegaConf
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 logger = initialize_overwatch(__name__)
@@ -57,12 +59,29 @@ class _QWen3_VL_Interface(nn.Module):
                 print("[WARNING] flash_attn not installed, falling back to sdpa")
                 attn_implementation = "sdpa"
 
-        model = Qwen3VLForConditionalGeneration.from_pretrained(
-            model_id,
-            attn_implementation=attn_implementation,
-            dtype=torch.bfloat16,
-            ignore_mismatched_sizes=True, # resize image no longer needed? @TODO check bug
+        if qwenvl_config.get("dual_stream"):
+            raise ValueError("dual_stream was removed; use QwenPI with cross_view_attention")
+        cross_view = qwenvl_config.get("cross_view_attention", {}) or {}
+        cross_view = (
+            OmegaConf.to_container(cross_view, resolve=True)
+            if OmegaConf.is_config(cross_view) else dict(cross_view)
         )
+        model_class = Qwen3VLForConditionalGeneration
+        hf_config = Qwen3VLConfig.from_pretrained(model_id)
+        if cross_view:
+            from .qwen3_vl_cross_view import Qwen3VLForConditionalGeneration as CrossViewModel
+            hf_config.vision_config.cross_view_attention = cross_view
+            model_class = CrossViewModel
+        if bool(qwenvl_config.get("load_weights", True)):
+            model = model_class.from_pretrained(
+                model_id, config=hf_config, attn_implementation=attn_implementation,
+                dtype=torch.bfloat16, ignore_mismatched_sizes=True,
+            )
+        else:
+            hf_config._attn_implementation = attn_implementation
+            model = model_class(hf_config).to(torch.bfloat16)
+        if cross_view.get("enabled", False):
+            logger.info(f"QwenPI cross-view global layers (zero-based): {model.model.visual.global_attention_indexes}")
         processor = AutoProcessor.from_pretrained(model_id)
         processor.tokenizer.padding_side = "left"
 

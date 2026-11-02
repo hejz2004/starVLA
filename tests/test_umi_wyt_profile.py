@@ -30,7 +30,7 @@ def main():
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     legacy = OmegaConf.create(Path(args.baseline).read_text())
-    compact = OmegaConf.load('examples/umi/train_files/starvla_dualstream_umi_v2.yaml')
+    compact = OmegaConf.load('examples/umi/train_files/starvla_qwenpi_da3_umi_v2.yaml')
     initial = plain_config(compact)
     assert len(initial.datasets.vla_data) == 7
     # The requested batch change is independent of profile expansion.
@@ -102,7 +102,7 @@ def main():
     assert len(saved.datasets.vla_data.stages) == 5
     assert saved.datasets.vla_data.language_window_policy == 'same_segment'
     # Existing smoke YAML uses the same pinned recipe and its original short budget.
-    smoke = OmegaConf.load('examples/umi/train_files/starvla_dualstream_umi_smoke.yaml')
+    smoke = OmegaConf.load('examples/umi/train_files/starvla_qwenpi_da3_umi_smoke.yaml')
     resolve_umi_stages(smoke,1)
     assert smoke.trainer.max_train_steps == 10
     assert smoke.datasets.vla_data.stage_global_batch_size == 16

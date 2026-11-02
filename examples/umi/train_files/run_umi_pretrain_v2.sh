@@ -69,7 +69,7 @@ if [[ "${resume}" == 1 ]]; then
     output_dir="${run_root_dir}/${run_id}"
     config_yaml="${CONFIG_YAML:-${output_dir}/config.full.yaml}"
 else
-    config_yaml="${CONFIG_YAML:-${script_dir}/starvla_dualstream_umi_v2.yaml}"
+    config_yaml="${CONFIG_YAML:-${script_dir}/starvla_qwenpi_da3_umi_v2.yaml}"
 fi
 # Accept a full path, a repo-relative path, or a filename in train_files/.
 if [[ ! -f "${config_yaml}" && -f "${script_dir}/${config_yaml}" ]]; then

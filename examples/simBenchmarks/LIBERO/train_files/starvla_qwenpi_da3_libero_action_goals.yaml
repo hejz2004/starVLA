@@ -1,4 +1,5 @@
-run_id: libero_posttrain_umi110k_b128
+# Native-action-derived controller goals; all H16 targets share the image-time anchor.
+run_id: da3_libero_goal_binary_vlm_init
 run_root_dir: playground/Checkpoints
 seed: 42
 wandb_entity: hejz26-tsinghua-university
@@ -7,25 +8,17 @@ is_debug: false
 version_id: "0.21"
 
 framework:
-  name: DualStreamQwenPI
+  name: QwenPI
   qwenvl:
-    base_vlm: ./playground/Pretrained_models/Qwen3-VL-2B-Instruct
-    # The complete UMI checkpoint is loaded by trainer.pretrained_checkpoint.
-    load_weights: false
+    base_vlm: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Pretrained_models/Qwen3-VL-2B-Instruct
+    # Initialize the VLM from the original Qwen3-VL-2B-Instruct weights.
+    load_weights: true
     attn_implementation: sdpa
     vl_hidden_dim: 2048
-    dual_stream:
+    cross_view_attention:
       enabled: true
-      # Must equal sorted(set(deepstack_visual_indexes) | {depth-1}) of the
-      # loaded checkpoint; validated at model construction.
-      interaction_indexes: [5, 11, 17, 23]
-      num_shared_tokens: 32
-      num_heads: 16
-      intermediate_size: 4096
-      gate_hidden_size: 256
-      gate_init_value: 0.01
-      gate_output_weight_std: 0.001
-      attention_dropout: 0.0
+      # Zero-based: layers 0..15 local; 16,18,20,22 global; 17,19,21,23 local.
+      start_layer: 16
   action_model:
     action_dim: 16
     state_dim: 16
@@ -55,13 +48,17 @@ datasets:
   vla_data:
     dataset_py: lerobot_datasets
     data_root_dir: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LEROBOT_LIBERO_DATA
-    data_mix: libero_all_umi16
+    data_mix: libero_all_anchored_osc_goal_binary
     drop_incomplete_action_chunks: true
-    # 16D: anchor-relative EEF [position(3), quaternion xyzw(4), gripper(1)] + masked right arm.
-    action_type: relative_eef_pose_quat
+    # 16D: anchored native controller goal position3/quaternion4 + binary open1 + masked right8.
+    action_type: libero-anchored-osc-goal-binary-v1
     action_horizon: 16
-    # LIBERO-specific q01/q99 statistics over all complete 16-step windows.
-    normalization_statistics: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LEROBOT_LIBERO_DATA/libero_umi16_statistics_h16.json
+    controller_goal_root: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LIBERO_OSC_GOAL_BINARY_V1
+    include_state: false
+    action_mode: abs
+    state_action_dtype: float32
+    # Pose-only q01/q99 affine transform without clipping; gripper remains binary 0/1.
+    normalization_statistics: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LIBERO_OSC_GOAL_BINARY_V1/statistics.json
     sequential_step_sampling: False
     CoT_prompt: "Your task is {instruction}. To identify the key objects for your task. Locate their bounding boxes in [x1,y1,x2,y2] format."
     # Single-node 16 PPU: 16 x 16 x gradient_accumulation_steps(1) = global batch 256.
@@ -74,8 +71,8 @@ datasets:
     pin_memory: false
 
 trainer:
-  # Initialize model weights from UMI; start a new LIBERO optimizer/scheduler run.
-  pretrained_checkpoint: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Checkpoints/starvla_umi_b24/checkpoints/steps_110000_pytorch_model.pt
+  # Direct LIBERO post-training from base VLM; action head starts from random initialization.
+  pretrained_checkpoint: null  # Do not load UMI or a previous VLA checkpoint.
   is_resume: false
   max_train_steps: 15000
   num_warmup_steps: 750
@@ -84,17 +81,13 @@ trainer:
   eval_interval: 10000000
   learning_rate:
     base: 3.0e-05
-    # One flat LR for the whole VLM interface (incl. dual-stream stages and
-    # shared_init): build_param_lr_groups recurses module.parameters() without
-    # dedup, so a nested child key would put the same params in two groups and
-    # crash AdamW ("some parameters appear in more than one parameter group").
+    # Flat parameter groups avoid including the same parameter twice.
     qwen_vl_interface: 1.0e-05
     action_model: 1.0e-04
   lr_scheduler_type: cosine_with_min_lr
   scheduler_specific_kwargs:
     min_lr: 1.0e-06
-  # Keep freeze_modules empty: freezing `qwen_vl_interface` here would also
-  # freeze the new interaction_stages/shared_init and they would never train.
+  # Train the existing visual blocks, including the global-attention blocks.
   freeze_modules: ''
   loss_scale:
     vla: 1.0

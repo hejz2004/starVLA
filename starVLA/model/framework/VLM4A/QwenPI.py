@@ -58,6 +58,9 @@ class QwenPIDefaultConfig:
             "base_vlm": "./playground/Pretrained_models/Qwen3-VL-4B-Instruct",
             # Attention implementation: "flash_attention_2" | "eager" | "sdpa"
             "attn_implementation": "flash_attention_2",
+            "load_weights": True,
+            # Opt-in late alternating attention; null selects floor(2*depth/3).
+            "cross_view_attention": {"enabled": False, "start_layer": None},
             # VLM hidden dimension (auto-set at runtime from model config)
             "vl_hidden_dim": 2048,
             # Number of VL transformer layers (auto-set at runtime)
@@ -140,6 +143,13 @@ class Qwen_PI(baseframework):
         self.config = merge_framework_config(QwenPIDefaultConfig, config)
         self.qwen_vl_interface = get_vlm_model(config=self.config)
 
+        if bool(self.config.get("trainer", {}).get("gradient_checkpointing", False)) or bool(
+            self.config.framework.qwenvl.get("gradient_checkpointing", False)
+        ):
+            self.qwen_vl_interface.model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
+
         # Read the actual hidden size and layer count from the loaded VLM.
         # `output_hidden_states=True` returns (num_hidden_layers + 1) tensors;
         # we keep the last num_hidden_layers of them, so DiT depth must match.
@@ -167,6 +177,14 @@ class Qwen_PI(baseframework):
         # are normalised upstream by `share_tools.apply_config_compat`, so we
         # only ever read `action_horizon` here.
         self.action_horizon = int(self.config.framework.action_model.action_horizon)
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        if any(".interaction_stages." in key or key.endswith(".shared_init") for key in state_dict):
+            raise ValueError(
+                "Legacy dualstream weights cannot initialize this QwenPI experiment; "
+                "use original QwenPI/VLM weights or a matching cross-view checkpoint."
+            )
+        return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def _encode_vl_hidden_states(
         self, batch_images: List, instructions: List[str]
@@ -205,6 +223,14 @@ class Qwen_PI(baseframework):
         batch_images = [example["image"] for example in examples]  #  [B, [PLT]]
         instructions = [example["lang"] for example in examples]  # [B, str]
         actions = [example["action"] for example in examples]  # label [B, len, 7]
+        action_masks = [example.get("action_mask") for example in examples]
+        has_action_mask = any(mask is not None for mask in action_masks)
+        if has_action_mask:
+            for action, mask in zip(actions, action_masks):
+                if mask is not None and np.shape(mask) != np.shape(action):
+                    raise ValueError(
+                        f"action_mask shape {np.shape(mask)} does not match action shape {np.shape(action)}"
+                    )
 
         state = [example["state"] for example in examples] if "state" in examples[0] else None  # [B, 1, state_dim]
 
@@ -231,6 +257,15 @@ class Qwen_PI(baseframework):
                 raise ValueError("framework.action_model.repeated_diffusion_steps must be a positive integer")
             repeated_diffusion_steps = int(repeated_diffusion_steps)
             actions_target_repeated = actions_target.repeat(repeated_diffusion_steps, 1, 1)
+            action_mask_repeated = None
+            if has_action_mask:
+                action_mask = torch.stack([
+                    torch.ones_like(action, dtype=torch.bool)
+                    if mask is None
+                    else torch.as_tensor(mask, device=base_hidden.device, dtype=torch.bool)
+                    for action, mask in zip(actions, action_masks)
+                ])[:, -self.action_horizon :, :]
+                action_mask_repeated = action_mask.repeat(repeated_diffusion_steps, 1, 1)
             # Repeat features for each layer
             vl_embs_list_repeated = [h.repeat(repeated_diffusion_steps, 1, 1) for h in vl_embs_list]
             if backbone_attention_mask is not None:
@@ -248,6 +283,7 @@ class Qwen_PI(baseframework):
                 actions_target_repeated,
                 state_repeated,
                 encoder_attention_mask=backbone_attention_mask,
+                action_mask=action_mask_repeated,
             )  # (B, chunk_len, action_dim)
 
         return {"action_loss": action_loss}
