@@ -263,6 +263,9 @@ class FrameworkTools:
         Returns:
             Unnormalized actions (same shape).
         """
+        if action_norm_stats.get("normalization") == "mean_std":
+            from starVLA.dataloader.umi_wyt import inverse_exported_actions
+            return inverse_exported_actions(normalized_actions, action_norm_stats)
         mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
         action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
         normalized_actions = np.clip(normalized_actions, -1, 1)

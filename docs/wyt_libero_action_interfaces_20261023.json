@@ -1,0 +1,369 @@
+{
+  "date": "2026-10-23",
+  "machine": "ppu-dev",
+  "wyt_experiments_root": "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments",
+  "exact_40k_91_60_run_identified": false,
+  "source_hashes": {
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_10k_ppu_20261020_v1/code/examples/LIBERO/umi16_control.py": {
+      "sha256": "b9d20d6aa9f3d0161bedb37a2bebea5aca43f82698c4573483799dfc288f6a88",
+      "lines": 98
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_10k_ppu_20261020_v1/code/examples/LIBERO/train_files/data_registry/data_config.py": {
+      "sha256": "eb8738fef36fc1ee9e0e5776abc74f233baab1b91bb434e54aaa8a9c6f8099b3",
+      "lines": 270
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_minfix_20261022_v1/code/examples/LIBERO/umi_aligned_control.py": {
+      "sha256": "4fdf65087bc0595102980c2dabc01738ff965edb1d9fb49d976caaeecf7347a9",
+      "lines": 147
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_minfix_20261022_v1/code/examples/LIBERO/umi_native_delta_precision.py": {
+      "sha256": "8b171a6e8f6acd9ab6f23184e6f23bb45f0c58adb0a38c61bacdda83f3c087ff",
+      "lines": 62
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_minfix_20261022_v1/code/examples/LIBERO/umi_collection_calibrated.py": {
+      "sha256": "ac99963a062052ae5ad670d1969c49a6417c2d4e71a2a714cf3bd8e1b080de8e",
+      "lines": 13
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_minfix_20261022_v1/code/examples/LIBERO/umi_aligned_normalize.py": {
+      "sha256": "61f487c9ed73581dde48bf79c7e79330f907f65b4dd6496b6c21e61ecf59d64a",
+      "lines": 50
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_minfix_20261022_v1/code/examples/LIBERO/train_files/data_registry/umi_aligned_config.py": {
+      "sha256": "417a9fd600d2f54f253c286a908db5d2ee0aedd54930c10c733ec14421c356b3",
+      "lines": 121
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_minfix_20261022_v1/tools/build_original_video_sidecars.py": {
+      "sha256": "8f6b62b84df2930d87bf2e033d3dcfc4a165915be55b09fba15eb060a66bc924",
+      "lines": 206
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_30k40k50k_nativeosc_ppu_20261021_v1/code/examples/LIBERO/native_osc16.py": {
+      "sha256": "20d9952672128819ae0bbd4efb76157beaefc5e1894193712ff74bd45579003c",
+      "lines": 62
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_30k40k50k_nativeosc_ppu_20261021_v1/code/examples/LIBERO/osc_goal16.py": {
+      "sha256": "4d3cff10a3d593829f154c31829d93685c4d39384133b44152c1eca7c9d85cac",
+      "lines": 58
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_30k40k50k_nativeosc_ppu_20261021_v1/code/examples/LIBERO/train_files/data_registry/native_osc_config.py": {
+      "sha256": "e03d0bf26373f77a9acb1f2b5d941e0828145f8cd1418a3f37e78fc11080f682",
+      "lines": 46
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_30k40k50k_nativeosc_ppu_20261021_v1/configs/qwenpi_libero_nativeosc16_40k.yaml": {
+      "sha256": "59c4c159422a74cb3821ef4467422bfca20d917e01869e58fb71263fb99d39b6",
+      "lines": 77
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_pi05pad_20261022_v1/pi05pad_actions.py": {
+      "sha256": "ceea2ca29db40d0f9e3b429b8e5da5c4bd9e06de6c47272a83e3b38186ac78f8",
+      "lines": 86
+    },
+    "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_pi05pad_20261022_v1/pi05pad_eval.py": {
+      "sha256": "08f917ed5bcf5cc12d8c99d6201a9f171f8fa6e313896b28b56e90be615ed479",
+      "lines": 28
+    }
+  },
+  "scores": [
+    {
+      "path": "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_train_libero_plus_pipeline_20261022_v1/runs/libero_umi_minfix_20k_7500updates_8x64_all_eval_v1/evaluations/pipeline_libero_2000_v1/summary.json",
+      "run": "libero_umi_minfix_20k_7500updates_8x64_all_eval_v1",
+      "rate": 0.978,
+      "episodes": 2000,
+      "suites": {
+        "libero_spatial": {
+          "episodes": 500,
+          "successes": 493,
+          "success_rate": 0.986
+        },
+        "libero_object": {
+          "episodes": 500,
+          "successes": 497,
+          "success_rate": 0.994
+        },
+        "libero_goal": {
+          "episodes": 500,
+          "successes": 489,
+          "success_rate": 0.978
+        },
+        "libero_10": {
+          "episodes": 500,
+          "successes": 477,
+          "success_rate": 0.954
+        }
+      },
+      "control_mode": "umi_aligned",
+      "raw_worker_rows_verified": 2000,
+      "protocol": {
+        "trials": 50,
+        "seed": 7,
+        "max_tasks": 10,
+        "execute_steps": 16,
+        "num_shards": 8,
+        "shard_index": 0,
+        "version": "libero-umi-aligned-actuator-aperture-v1",
+        "control_mode": "umi_aligned",
+        "normalization_sha256": "cf50159f06b6cd23ad14ff2bb2a173b347d11461a036a425b3ed517f21291c85",
+        "adapter_sha256": "ac99963a062052ae5ad670d1969c49a6417c2d4e71a2a714cf3bd8e1b080de8e",
+        "config_sha256": "8c60471b4f7da964b776a9c009369cea8697939dad95e4fc7f73f0db11f8a245",
+        "mujoco": "3.2.3",
+        "robosuite": "1.4.0",
+        "normalization": "q01_q99_no_clip",
+        "geometry_precision": "float64-physical-normalized-float32-v1",
+        "collection_calibration_profile": "libero-native-osc-continuous-no-grid-v1",
+        "collection_calibration_profile_sha256": "eb28f83679240ff663f604f11561bb718df981f5b900971b9052cf34a4bd2499",
+        "adapter_parameters": {
+          "rotation_hold_tolerance_rad": 1e-07
+        },
+        "pose_bounds": "original native OSC input bounds; continuous commands without collection-grid rounding",
+        "adapter_inheritance_sha256": {
+          "umi_collection_calibrated.py": "ac99963a062052ae5ad670d1969c49a6417c2d4e71a2a714cf3bd8e1b080de8e",
+          "umi_native_delta_precision.py": "8b171a6e8f6acd9ab6f23184e6f23bb45f0c58adb0a38c61bacdda83f3c087ff",
+          "umi_aligned_precision.py": "49a3a94ee3c4e72e8339d7ce00f45acff975247c985164105b506d7287e4584a",
+          "umi_aligned_control.py": "4fdf65087bc0595102980c2dabc01738ff965edb1d9fb49d976caaeecf7347a9",
+          "umi_aligned_normalize.py": "61f487c9ed73581dde48bf79c7e79330f907f65b4dd6496b6c21e61ecf59d64a",
+          "umi16_control.py": "b9d20d6aa9f3d0161bedb37a2bebea5aca43f82698c4573483799dfc288f6a88"
+        },
+        "normalizer_sha256": "49a3a94ee3c4e72e8339d7ce00f45acff975247c985164105b506d7287e4584a",
+        "adapter_base_sha256": "4fdf65087bc0595102980c2dabc01738ff965edb1d9fb49d976caaeecf7347a9",
+        "normalizer_base_sha256": "61f487c9ed73581dde48bf79c7e79330f907f65b4dd6496b6c21e61ecf59d64a",
+        "image_rendering": "libero-chunk-rgb-gate-v1",
+        "image_gate_sha256": "bb248a2c44422ab084eb1c2123ea4c0453ce717c26c9dcc348973afd111d84e0",
+        "work_scheduler": "libero-shared-work-queue-v1",
+        "trials_per_claim": 5,
+        "max_task_attempts": 3,
+        "pipeline_context": {
+          "domain": "libero",
+          "profile": "formal",
+          "counts": {
+            "libero_spatial": 10,
+            "libero_object": 10,
+            "libero_goal": 10,
+            "libero_10": 10
+          },
+          "trials": 50,
+          "total_episodes": 2000,
+          "seed": 7,
+          "workers": 8,
+          "full_plus_counts": {
+            "libero_spatial": 2402,
+            "libero_object": 2518,
+            "libero_goal": 2591,
+            "libero_10": 2519
+          },
+          "source_indices": null,
+          "render_gate": true,
+          "control_mode": "umi_aligned",
+          "execute_steps": 16,
+          "checkpoint_scope": "current umi_aligned/minfix posttraining",
+          "checkpoint": {
+            "path": "/mnt/workspace/wyt/experiments/libero_train_libero_plus_pipeline_20261022_v1/runs/libero_umi_minfix_20k_7500updates_8x64_all_eval_v1/final_model/pytorch_model.pt",
+            "size": 8231729189,
+            "mtime_ns": 1792737896011877802
+          },
+          "config_sha256": "8c60471b4f7da964b776a9c009369cea8697939dad95e4fc7f73f0db11f8a245",
+          "statistics_sha256": "cf50159f06b6cd23ad14ff2bb2a173b347d11461a036a425b3ed517f21291c85",
+          "pipeline_manifest_sha256": "bf3e23ec5b99665ba38a3a23836717f30cb8fe10fe7e8213952dd5d80cb5e512",
+          "plus_source_commit": null,
+          "plus_classification_sha256": null,
+          "gate_sha256": "bb248a2c44422ab084eb1c2123ea4c0453ce717c26c9dcc348973afd111d84e0"
+        }
+      }
+    },
+    {
+      "path": "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_20k_pi05pad_20261022_v1/runs/libero_pi05pad_20k_7500updates_8x64_all_eval_v1/evaluations/pipeline_libero_2000_v1/summary.json",
+      "run": "libero_pi05pad_20k_7500updates_8x64_all_eval_v1",
+      "rate": 0.9635,
+      "episodes": 2000,
+      "suites": {
+        "libero_spatial": {
+          "episodes": 500,
+          "successes": 489,
+          "success_rate": 0.978
+        },
+        "libero_object": {
+          "episodes": 500,
+          "successes": 498,
+          "success_rate": 0.996
+        },
+        "libero_goal": {
+          "episodes": 500,
+          "successes": 487,
+          "success_rate": 0.974
+        },
+        "libero_10": {
+          "episodes": 500,
+          "successes": 453,
+          "success_rate": 0.906
+        }
+      },
+      "control_mode": "native_osc",
+      "raw_worker_rows_verified": 2000,
+      "protocol": {
+        "trials": 50,
+        "seed": 7,
+        "max_tasks": 10,
+        "execute_steps": 16,
+        "num_shards": 8,
+        "shard_index": 0,
+        "version": "libero-native7-contiguous-pad16-q01q99-no-clip-v1",
+        "control_mode": "native_osc",
+        "normalization_sha256": "2a6acd6cb8065442e3c931aa6c6b5f52f873a98000dfebd2bf4ee6f06356a481",
+        "adapter_sha256": "08f917ed5bcf5cc12d8c99d6201a9f171f8fa6e313896b28b56e90be615ed479",
+        "config_sha256": "4e6ebe0948f20af727221c4bcb2c98cf11ad60b9e526642ea0a54243c5587b9c",
+        "image_rendering": "libero-chunk-rgb-gate-v1",
+        "image_gate_sha256": "bb248a2c44422ab084eb1c2123ea4c0453ce717c26c9dcc348973afd111d84e0",
+        "work_scheduler": "libero-shared-work-queue-v1",
+        "trials_per_claim": 5,
+        "max_task_attempts": 3,
+        "pipeline_context": {
+          "domain": "libero",
+          "profile": "formal",
+          "counts": {
+            "libero_spatial": 10,
+            "libero_object": 10,
+            "libero_goal": 10,
+            "libero_10": 10
+          },
+          "trials": 50,
+          "total_episodes": 2000,
+          "seed": 7,
+          "workers": 8,
+          "full_plus_counts": {
+            "libero_spatial": 2402,
+            "libero_object": 2518,
+            "libero_goal": 2591,
+            "libero_10": 2519
+          },
+          "source_indices": null,
+          "render_gate": true,
+          "control_mode": "native_osc",
+          "execute_steps": 16,
+          "checkpoint_scope": "pi05pad16 native7 posttraining: this pipeline training final_model",
+          "checkpoint": {
+            "path": "/mnt/workspace/wyt/experiments/libero_posttrain_clean20_20k_pi05pad_20261022_v1/runs/libero_pi05pad_20k_7500updates_8x64_all_eval_v1/final_model/pytorch_model.pt",
+            "size": 8231729189,
+            "mtime_ns": 1792737999613892482
+          },
+          "config_sha256": "4e6ebe0948f20af727221c4bcb2c98cf11ad60b9e526642ea0a54243c5587b9c",
+          "statistics_sha256": "2a6acd6cb8065442e3c931aa6c6b5f52f873a98000dfebd2bf4ee6f06356a481",
+          "pipeline_manifest_sha256": "bf3e23ec5b99665ba38a3a23836717f30cb8fe10fe7e8213952dd5d80cb5e512",
+          "plus_source_commit": null,
+          "plus_classification_sha256": null,
+          "gate_sha256": "bb248a2c44422ab084eb1c2123ea4c0453ce717c26c9dcc348973afd111d84e0",
+          "action_interface": "libero-native7-contiguous-pad16-q01q99-no-clip-v1",
+          "native_action_dim": 7,
+          "model_action_dim": 16,
+          "gripper_index": 6,
+          "padding_channels": [
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "padding_supervised": true,
+          "extra_delta_transform": false,
+          "action_adapter_sha256": "08f917ed5bcf5cc12d8c99d6201a9f171f8fa6e313896b28b56e90be615ed479",
+          "action_normalizer_sha256": "ceea2ca29db40d0f9e3b429b8e5da5c4bd9e06de6c47272a83e3b38186ac78f8",
+          "branch_manifest_sha256": "b5bf40beb8d18eabb5fcff84c0dce15f1451408ec27291cebeb84172808727e3"
+        },
+        "action_interface": "libero-native7-contiguous-pad16-q01q99-no-clip-v1",
+        "native_action_dim": 7,
+        "model_action_dim": 16,
+        "gripper_index": 6,
+        "normalizer_sha256": "ceea2ca29db40d0f9e3b429b8e5da5c4bd9e06de6c47272a83e3b38186ac78f8"
+      }
+    },
+    {
+      "path": "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_10k_ppu_20261020_v1/runs/libero_umi16_fromclean20_10k_10epoch/evaluations/native_absolute_mujoco323_4suite_50trials_16ppu/summary.json",
+      "run": "libero_umi16_fromclean20_10k_10epoch",
+      "rate": 0.792,
+      "episodes": 2000,
+      "suites": {
+        "libero_spatial": {
+          "episodes": 500,
+          "successes": 407,
+          "success_rate": 0.814
+        },
+        "libero_object": {
+          "episodes": 500,
+          "successes": 491,
+          "success_rate": 0.982
+        },
+        "libero_goal": {
+          "episodes": 500,
+          "successes": 277,
+          "success_rate": 0.554
+        },
+        "libero_10": {
+          "episodes": 500,
+          "successes": 409,
+          "success_rate": 0.818
+        }
+      },
+      "control_mode": "native_absolute",
+      "raw_worker_rows_verified": 2000,
+      "protocol": {
+        "trials": 50,
+        "seed": 7,
+        "max_tasks": 10,
+        "execute_steps": 16,
+        "num_shards": 16,
+        "shard_index": 0,
+        "version": "umi16-native-absolute-v1",
+        "control_mode": "native_absolute"
+      }
+    },
+    {
+      "path": "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_posttrain_clean20_10k_ppu_20261020_v1/runs/libero_umi16_fromclean20_20k_10epoch/evaluations/native_absolute_mujoco323_4suite_50trials_16ppu/summary.json",
+      "run": "libero_umi16_fromclean20_20k_10epoch",
+      "rate": 0.7925,
+      "episodes": 2000,
+      "suites": {
+        "libero_spatial": {
+          "episodes": 500,
+          "successes": 403,
+          "success_rate": 0.806
+        },
+        "libero_object": {
+          "episodes": 500,
+          "successes": 493,
+          "success_rate": 0.986
+        },
+        "libero_goal": {
+          "episodes": 500,
+          "successes": 280,
+          "success_rate": 0.56
+        },
+        "libero_10": {
+          "episodes": 500,
+          "successes": 409,
+          "success_rate": 0.818
+        }
+      },
+      "control_mode": "native_absolute",
+      "raw_worker_rows_verified": 2000,
+      "protocol": {
+        "trials": 50,
+        "seed": 7,
+        "max_tasks": 10,
+        "execute_steps": 16,
+        "num_shards": 16,
+        "shard_index": 0,
+        "version": "umi16-native-absolute-v1",
+        "control_mode": "native_absolute"
+      }
+    }
+  ],
+  "aligned_source_matches_recorded_eval_hashes": {
+    "umi_collection_calibrated.py": true,
+    "umi_native_delta_precision.py": true,
+    "umi_aligned_precision.py": true,
+    "umi_aligned_control.py": true,
+    "umi_aligned_normalize.py": true,
+    "umi16_control.py": true
+  },
+  "scope": "Read-only source, saved config and historical episode-record review. No policy rerun, no WYT files changed."
+}

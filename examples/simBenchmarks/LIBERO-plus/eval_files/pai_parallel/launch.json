@@ -1,0 +1,59 @@
+{
+  "WorkspaceId": "310375",
+  "ResourceId": "quota1obhtzfmre1",
+  "DisplayName": "lipeiyan-hjz-libero-plus-15000-16ppu-w20-resume-20261030-110442",
+  "JobType": "PyTorchJob",
+  "Priority": 6,
+  "JobMaxRunningTimeMinutes": 1080,
+  "JobSpecs": [
+    {
+      "Type": "Master",
+      "PodCount": 1,
+      "Image": "egslingjun-registry.cn-wulanchabu.cr.aliyuncs.com/egslingjun/training-xpu-pytorch:26.04.post1",
+      "ResourceConfig": {
+        "GPU": "16",
+        "CPU": "160",
+        "Memory": "1600Gi",
+        "SharedMemory": "32Gi"
+      },
+      "RestartPolicy": "Never"
+    }
+  ],
+  "UserCommand": "bash -lc 'cd /mnt/workspace/Native_Policy/user/hjz/starVLA && exec bash examples/simBenchmarks/LIBERO-plus/eval_files/pai_parallel/launch.sh --resume'",
+  "DataSources": [
+    {
+      "Uri": "nas://291s1jv2cdy6o4bfz6g-mke60.cn-wulanchabu.nas.aliyuncs.com/lpy",
+      "MountPath": "/mnt/workspace",
+      "MountAccess": "RW"
+    },
+    {
+      "Uri": "nas://291s1jv2cdy6o4bfz6g-mke60.cn-wulanchabu.nas.aliyuncs.com/public",
+      "MountPath": "/mnt/nas/public",
+      "MountAccess": "RO"
+    }
+  ],
+  "Settings": {
+    "EnableRDMA": true,
+    "Driver": "2.1.0"
+  },
+  "UserVpc": {
+    "VpcId": "vpc-0jlinv60c1dd808dj7bi3",
+    "SwitchId": "vsw-0jl7m0mtgzm35i47vkw9h",
+    "SecurityGroupId": "sg-0jlhd8wix9uv8wj547pk",
+    "ExtendedCIDRs": [
+      "10.1.200.0/24",
+      "10.1.0.0/20"
+    ]
+  },
+  "SchedulingStrategy": "Auto",
+  "Envs": {
+    "RUN_ID": "libero_plus_15000_16ppu_w20_resume_20261030_110442",
+    "EVAL_MODE": "full",
+    "NUM_CARDS": "16",
+    "WORKERS_PER_CARD": "20",
+    "CPU_BUDGET": "160",
+    "WANDB_MODE": "disabled",
+    "RUN_ROOT": "/mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Evaluation/libero_plus_15000_16ppu_w10_20261030_092954",
+    "BOOTSTRAP_LOG": "/mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Evaluation/libero_plus_15000_16ppu_w10_20261030_092954.resume_w20_v3.bootstrap.log"
+  }
+}

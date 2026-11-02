@@ -77,4 +77,15 @@ def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here on
             output_dir = Path(cfg.output_dir)
             umi_train_dataloader.dataset.save_dataset_statistics(output_dir / "dataset_statistics.json")
         return umi_train_dataloader
+    elif dataset_py == "umi_indexed":
+        from starVLA.dataloader.umi_wyt import make_wyt_umi_dataloader
+        return make_wyt_umi_dataloader(cfg)
+    elif dataset_py == "umi_lerobot":
+        from starVLA.dataloader.umi_lerobot import make_umi_lerobot_dataloader
+
+        umi_train_dataloader = make_umi_lerobot_dataloader(cfg)
+        if not dist.is_initialized() or dist.get_rank() == 0:
+            output_dir = Path(cfg.output_dir)
+            umi_train_dataloader.dataset.save_dataset_statistics(output_dir / "dataset_statistics.json")
+        return umi_train_dataloader
     raise ValueError(f"Unsupported dataset_py: {dataset_py!r}")

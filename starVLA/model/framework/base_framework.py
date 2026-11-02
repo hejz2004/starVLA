@@ -256,6 +256,7 @@ class baseframework(PreTrainedModel):
         cls,
         pretrained_checkpoint: str,
         config_overrides: Sequence[str] | None = None,
+        allow_missing_prefixes: Sequence[str] | None = None,
         **kwargs,
     ) -> None:
         """
@@ -272,13 +273,18 @@ class baseframework(PreTrainedModel):
             pretrained_checkpoint: Path to .pt file inside run/checkpoints directory.
             config_overrides: Optional OmegaConf dotlist overrides applied after the
                 checkpoint config and before model construction.
+            allow_missing_prefixes: Optional key-prefix whitelist. Keys under these
+                prefixes may be absent on either side (missing model keys or
+                unexpected checkpoint keys), e.g. re-enabling state input on a
+                state-free checkpoint leaves the fresh state_encoder at its
+                initialization. Everything else must still match exactly.
             **kwargs: Extra constructor overrides passed to subclass.
 
         Returns:
             baseframework: Instantiated model (left on CPU; caller decides device).
 
         Raises:
-            RuntimeError: If state_dict key mismatch occurs under strict=True.
+            RuntimeError: If state_dict keys mismatch outside the whitelist.
             FileNotFoundError: If underlying files are missing (surfaced earlier).
         """
         pretrained_checkpoint = Path(pretrained_checkpoint)
@@ -305,16 +311,29 @@ class baseframework(PreTrainedModel):
         try:
             FrameworkModel.load_state_dict(model_state_dict, strict=True)
         except RuntimeError as e:
-            # must keep all keys matched
+            # Keys must match unless whitelisted by prefix (e.g. a fresh
+            # state_encoder when re-enabling state input on a state-free
+            # checkpoint).
             common_keys = model_keys.intersection(checkpoint_keys)
             missing_keys = model_keys - common_keys
             unexpected_keys = checkpoint_keys - common_keys
-            if missing_keys:
-                logger.warning(f"Missing keys in state_dict: {missing_keys}")
-            if unexpected_keys:
-                logger.warning(f"Unexpected keys in state_dict: {unexpected_keys}")
+            if allow_missing_prefixes:
+                def _tolerated(keys):
+                    return {k for k in keys if any(k.startswith(p) for p in allow_missing_prefixes)}
 
-            raise e
+                missing_keys -= _tolerated(missing_keys)
+                unexpected_keys -= _tolerated(unexpected_keys)
+            if missing_keys or unexpected_keys:
+                if missing_keys:
+                    logger.warning(f"Missing keys in state_dict: {missing_keys}")
+                if unexpected_keys:
+                    logger.warning(f"Unexpected keys in state_dict: {unexpected_keys}")
+                raise e
+            logger.warning(
+                "state_dict mismatch tolerated under prefixes %s; affected modules keep their initialization",
+                list(allow_missing_prefixes),
+            )
+            FrameworkModel.load_state_dict(model_state_dict, strict=False)
 
         # **ensure model is on GPU**
         FrameworkModel = FrameworkModel

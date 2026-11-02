@@ -156,6 +156,11 @@ class PolicyServerWrapper:
             proc = self._get_processor(self._default_unnorm_key)
             base["action_keys"] = proc.action_keys
             base["state_keys"] = proc.state_keys
+            base["action_representation"] = proc.action_representation
+            if getattr(proc, "action_contract", None) is not None:
+                base["action_contract"] = proc.action_contract
+            if proc.gripper_width_threshold is not None:
+                base["gripper_width_threshold"] = proc.gripper_width_threshold
         return base
 
     def predict_action(

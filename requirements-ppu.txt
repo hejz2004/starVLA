@@ -1,0 +1,55 @@
+# starVLA dependencies on the starvla-pi PPU container, pinned to the
+# versions actually installed there (checked 2026-10-11). Base image
+# training-xpu-pytorch:26.04.post1, /opt/ac2 env, Python 3.12.7.
+# After a container rebuild: pip install -r requirements-ppu.txt
+
+tiktoken==0.12.0
+einops==0.8.2
+transformers_stream_generator==0.0.4
+scipy==1.17.1
+setuptools==80.9.0
+pillow==12.2.0
+tensorboard==2.20.0
+matplotlib==3.5.3
+websocket-client==1.8.0
+websocket==0.2.1
+albumentations==1.4.18
+pydantic==2.10.6
+pyarrow==14.0.1
+fastparquet==2024.11.0
+av==12.3.0
+numpydantic==1.6.9
+qwen-vl-utils==0.0.8
+omegaconf==2.3.0
+numpy==1.26.4
+wandb==0.30.0
+rich==15.0.0
+diffusers==0.34.0
+timm==1.0.13
+tyro==1.0.16
+websockets==16.0
+pyzmq==27.1.0  # GR00T-protocol policy server (deployment/model_server/server_policy_gr00t_zmq.py)
+tdigest==0.5.2.2
+
+# --- base image provides (PPU builds from local wheels; NOT on PyPI, do not
+# --- pip-install these; recorded here so version drift after a rebuild is
+# --- visible). Repo requirements.txt says accelerate 1.5.2, but the working
+# --- container has 1.11.0 — trust the container.
+# torch==2.9.0+ali.10.ppu2.1.0.cu130
+# torchvision==0.24.0+7a9db90
+# torchaudio==2.9.0+eaa9e4e
+# triton==3.5.0+ppu2.1.0.cu130
+# accelerate==1.11.0+ali
+# deepspeed==0.18.8+ali
+# transformers==4.57.6+ali
+# flash-attn==2.7.4.post1+v0.1.0.ppu2.1.0
+# flash-attn-3==2.8.2+v0.1.0.ppu2.1.0.oe
+# flashinfer-python==0.6.4+v0.1.0.ppu2.1.0
+
+# env for qwen3.5 tip: flash-linear-attention may break older checkpoints (performance regression on previous ckpts)
+# torch==2.6.0+cu124
+# triton==3.2.0
+# flash-attn==2.7.4.post1
+# flash-linear-attention==0.3.2
+# causal_conv1d==1.5.0.post8
+# transformers==5.3.0

@@ -249,12 +249,16 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
         self.action_horizon = int(action_config.action_horizon)
         self.num_inference_timesteps = action_config.num_inference_timesteps
 
+        # use_state: false drops the proprioception input entirely; the
+        # dataset may still deliver state but the encoder is never built
+        # nor called, so no state parameters enter the optimizer.
+        use_state = bool(action_config.get("use_state", True))
         self.state_encoder = (
             MLP(
                 input_dim=action_config.state_dim,
                 output_dim=self.input_embedding_dim,
             )
-            if action_config.state_dim
+            if use_state and action_config.state_dim
             else None
         )
 
@@ -266,6 +270,15 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
             input_dim=self.input_embedding_dim,
             hidden_dim=1024,
             output_dim=self.action_dim,
+        )
+        decoder_input_norm = action_config.get("decoder_input_norm", "none")
+        if decoder_input_norm not in ("none", "layer_norm"):
+            raise ValueError(f"Unknown decoder_input_norm: {decoder_input_norm!r}")
+        # return_pre_output=True bypasses DiT.norm_out. Normalize action tokens
+        # at the decoder boundary without adding checkpoint parameters.
+        self.decoder_input_norm = (
+            nn.LayerNorm(self.input_embedding_dim, eps=1e-5, elementwise_affine=False)
+            if decoder_input_norm == "layer_norm" else nn.Identity()
         )
         self.future_tokens = nn.Embedding(action_config.num_target_vision_tokens, self.input_embedding_dim)
         nn.init.normal_(self.future_tokens.weight, mean=0.0, std=0.02)
@@ -285,17 +298,23 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
     def prepare_input(self, batch: dict) -> BatchFeature:
         return BatchFeature(data=batch)
 
+    def _decode_action_tokens(self, model_output: torch.Tensor, token_count: int) -> torch.Tensor:
+        action_tokens = model_output[:, -token_count:]
+        return self.action_decoder(self.decoder_input_norm(action_tokens))
+
     def forward(
         self,
         vl_embs_list: list,
         actions: torch.Tensor,
         state: torch.Tensor = None,
         encoder_attention_mask=None,
+        action_mask: torch.Tensor = None,
     ):
         """
         vl_embs: list of torch.Tensor, each shape (B, seq_length, feature_dim)
         actions: shape (B, action_horizon, D_action)
         encoder_attention_mask: optional (B, seq_length) bool/int
+        action_mask: optional (B, action_horizon, D_action) bool; True means valid
         """
         device = actions.device
         num_layers = len(vl_embs_list)
@@ -313,7 +332,7 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
         action_features = self.action_encoder(noisy_trajectory, t_discretized)
 
         # Embed state
-        state_features = self.state_encoder(state) if state is not None else None
+        state_features = self.state_encoder(state) if state is not None and self.state_encoder is not None else None
 
         # Maybe add position embedding.
         if self.config.add_pos_embed:
@@ -339,12 +358,21 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
         )
 
         # Decode only the action-token positions.
-        pred = self.action_decoder(model_output)
-        pred_actions = pred[:, -actions.shape[1] :]
+        pred_actions = self._decode_action_tokens(model_output, actions.shape[1])
 
         # Slice out only the action portion of pred and target.
-        loss = ((pred_actions - velocity) ** 2).mean()
-        return loss
+        if action_mask is None:
+            return ((pred_actions - velocity) ** 2).mean()
+        squared_error = (pred_actions - velocity).square()
+        if action_mask.shape != squared_error.shape:
+            raise ValueError(
+                f"action_mask shape {tuple(action_mask.shape)} does not match "
+                f"action shape {tuple(squared_error.shape)}"
+            )
+        valid = action_mask.to(device=squared_error.device, dtype=squared_error.dtype)
+        if not torch.any(valid):
+            raise ValueError("action_mask contains no valid action elements")
+        return (squared_error * valid).sum() / valid.sum()
 
     @torch.no_grad()
     def predict_action(
@@ -365,7 +393,7 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
         num_steps = self.num_inference_timesteps
         dt = 1.0 / num_steps
 
-        state_features = self.state_encoder(state) if state is not None else None
+        state_features = self.state_encoder(state) if state is not None and self.state_encoder is not None else None
 
         # Run denoising steps.
         for t in range(num_steps):
@@ -400,8 +428,7 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
                 return_pre_output=True,
             )
             # Decode only the action-token positions.
-            pred = self.action_decoder(model_output)
-            pred_velocity = pred[:, -self.action_horizon :]
+            pred_velocity = self._decode_action_tokens(model_output, self.action_horizon)
 
             # Euler integration
             actions = actions + dt * pred_velocity
@@ -495,8 +522,7 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
                 encoder_attention_mask=encoder_attention_mask,
                 return_pre_output=True,
             )
-            pred = self.action_decoder(model_output)
-            return pred[:, -self.action_horizon :]
+            return self._decode_action_tokens(model_output, self.action_horizon)
 
         T_prev = prev_action_chunk.shape[1]
         if T_prev < self.action_horizon:
@@ -518,7 +544,7 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
             device=device,
         )
 
-        state_features = self.state_encoder(state) if state is not None else None
+        state_features = self.state_encoder(state) if state is not None and self.state_encoder is not None else None
 
         if mode == "pigdm":
             # ── ΠGDM: pseudo-inverse guided diffusion ──
@@ -623,8 +649,7 @@ class LayerwiseFlowmatchingActionHead(nn.Module):
                     return_pre_output=True,
                 )
 
-                pred = self.action_decoder(model_output)
-                pred_velocity = pred[:, -self.action_horizon :]
+                pred_velocity = self._decode_action_tokens(model_output, self.action_horizon)
                 actions = actions + dt * pred_velocity
                 actions = torch.where(prefix_mask, prev_action_chunk.to(dtype), actions)
 

@@ -1,0 +1,7 @@
+# Reuse the posttraining extras, then add the LIBERO-plus simulator.
+-r ../../../../../requirements-ppu.txt
+-r requirements-simulation.txt
+# Compatible with NumPy 1.26 and the reference observation transforms.
+opencv-python-headless==4.10.0.84
+h5py==3.12.1
+albucore==0.0.17

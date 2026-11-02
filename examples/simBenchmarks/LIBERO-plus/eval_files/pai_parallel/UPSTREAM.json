@@ -1,0 +1,23 @@
+{
+  "source": "/mnt/workspace/Native_Policy/user/wyt/a100/wyt/experiments/libero_plus_guided_20261012_v2",
+  "successful_run": "libero_plus_guided_20261012_run03",
+  "sha256": {
+    "launchers/run_card.sh": "b2a10206e971f3fc35e150b07296f254f9d46601d3720ba86ac359706ea453a8",
+    "launchers/run_pai_node.sh": "0e84f0ca6a426561fa4f9d6d033a452da709dae47fc7d17cb786df95d29784c3",
+    "launchers/eval_worker.py": "d3579f24e8ea3439ad523d2048d7a0bda8671b527e37fbb4cbd5c2509f5bc71c",
+    "launchers/aggregate_results.py": "f9e104b23748649f3064019c4bf9c5b2894467b1a62d8f4c07441c0da4cb15ea",
+    "launchers/audit_results.py": "2a925a941f3fd73101371b076fca081268956144e913415fce8cd8161dbbb6e8",
+    "launchers/artifact_checks.py": "7f4eb89c4c055257659ff55d43b6ca4cc3de838fc7d31984122fafaf2bd68956",
+    "launchers/evaluation_controller.py": "dbaae20068b8e2696adf58ab11f6e0a291d0016dd7f058871b816944636dc287",
+    "launchers/run_gates_and_full.sh": "475c3cfa27db269b18a4463a6bb18905290efcff7720a82fea5be4596dc2e46e",
+    "launchers/test_artifact_acceptance.py": "c7b8dbd71cca2fcdaf4252a4c77080b747179a6ddf8739b762aea2801d6ffc1c",
+    "launchers/test_evaluation_controller.py": "24a2a737b57d04285878a1ceb66e6b2e36696179ea2a4eae2391c4278644c49d",
+    "launchers/task_classification.json": "faa87cce3e3ba434da01df7c77523a391b5f2912e4774330b0aa1be5f6a999e6",
+    "prepare_sim_runtime.py": "42f991700b4a98d5013ff5811bc2bfd3b4e8cb42c81181be28f4237218b3f7d4",
+    "prepare_plus_resources.py": "0ee414a61b0847d3d22bdfa4b44b0e91e8f5f4e6366ae732c1692ffc27d83954",
+    "guided_gates.py": "646bcacf6bbf73ceb9a5ec5cc64003f1cfebc30d4354f5aaf154d57dae525494",
+    "reference_LIBERO_plus_4976dc3.tar.gz": "bb10e5e819db9676ee8e7ad0e0d3457de1328148d82a33d53e977832df16dffe",
+    "REFERENCE_LIBERO_PLUS_SOURCE_SHA256.json": "e8f6973df595ffd73f9331691a7215c94296a389e54e07c5323b862df6380c21",
+    "sim_runtime_requirements.txt": "cb2214971844c288900ac3c276da9ffc2f3172bbe287becd8df2ed2715afd191"
+  }
+}

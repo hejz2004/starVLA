@@ -11,10 +11,11 @@ handshake. This client therefore no longer needs to:
   - perform un-normalization
 
 It only handles env-specific adaptation: image history bookkeeping, action
-ensembling, gripper sticky logic, and chunk-cache scheduling.
+ensembling, explicit action decoding, and chunk-cache scheduling.
 """
 
 from collections import deque
+from starVLA.dataloader.libero_action_contract import VERSION as GOAL_BINARY_VERSION, REPRESENTATION as GOAL_BINARY_REP, decode_goals, goal_to_native_delta
 from typing import Optional, Sequence
 
 import matplotlib.pyplot as plt
@@ -39,12 +40,28 @@ class ModelClient:
         host: str = "0.0.0.0",
         port: int = 10095,
         image_size: Sequence[int] = (224, 224),
+        action_interface: str = "anchored_goal_binary",
     ) -> None:
-        # Connect & receive handshake metadata (action_chunk_size, etc.)
+        interfaces = {"anchored_goal_binary": GOAL_BINARY_REP,
+                      "native_osc7": "controller_delta"}
+        if action_interface not in interfaces:
+            raise ValueError(f"Unknown explicit action_interface: {action_interface!r}")
+        self.action_interface = action_interface
+        self.action_representation = interfaces[action_interface]
         self.client = WebsocketClientPolicy(host, port)
         meta = self.client.get_server_metadata()
         self.action_chunk_size = int(meta["action_chunk_size"])
+        if self.action_chunk_size < 1:
+            raise ValueError("action_chunk_size must be positive")
         self._server_metadata = meta
+        received = meta.get("action_representation", "controller_delta")
+        if received != self.action_representation:
+            raise ValueError(f"Explicit interface {action_interface!r} requires {self.action_representation!r}, server declares {received!r}")
+        if self.action_representation == GOAL_BINARY_REP:
+            if meta.get("action_contract", {}).get("version") != GOAL_BINARY_VERSION:
+                raise ValueError("Goal model lacks the required binary action contract metadata")
+        self._anchor_pos = None
+        self._anchor_quat = None
 
         self.image_size: tuple = tuple(image_size)
         self.policy_setup = policy_setup
@@ -61,13 +78,6 @@ class ModelClient:
         self.action_ensemble = action_ensemble
         self.adaptive_ensemble_alpha = adaptive_ensemble_alpha
         self.action_ensemble_horizon = action_ensemble_horizon
-
-        # Gripper sticky state (kept for parity with the previous client; not
-        # currently consumed by LIBERO but other policy_setup paths use it).
-        self.sticky_action_is_on = False
-        self.gripper_action_repeat = 0
-        self.sticky_gripper_action = 0.0
-        self.previous_gripper_action = None
 
         self.task_description = None
         self.image_history = deque(maxlen=self.horizon)
@@ -92,13 +102,11 @@ class ModelClient:
         if self.action_ensemble:
             self.action_ensembler.reset()
         self.num_image_history = 0
-        self.sticky_action_is_on = False
-        self.gripper_action_repeat = 0
-        self.sticky_gripper_action = 0.0
-        self.previous_gripper_action = None
         self.raw_actions = None
+        self._anchor_pos = None
+        self._anchor_quat = None
 
-    def step(self, example: dict, step: int = 0, **kwargs) -> dict:
+    def step(self, example: dict, step: int = 0, *, eef_pos=None, eef_quat=None, diagnostic_seed=None, controller_eef_pos=None, controller_eef_quat=None, controller_goal_quat=None, **kwargs) -> dict:
         """One env step.
 
         Args:
@@ -127,8 +135,17 @@ class ModelClient:
                 resized.append(arr)
             example = {**example, "image": resized}
 
-        # Refresh chunk if needed.
-        if step % self.action_chunk_size == 0 or self.raw_actions is None:
+        # Refresh chunk if needed. Anchored goals are relative to the EEF
+        # observation at this exact chunk start, not the previous action step.
+        refresh_chunk = step % self.action_chunk_size == 0 or self.raw_actions is None
+        if self.action_representation == GOAL_BINARY_REP and (eef_pos is None or eef_quat is None):
+            raise ValueError("Anchored-goal execution needs the current EEF position and quaternion")
+        if self.action_representation == GOAL_BINARY_REP and any(x is None for x in (controller_eef_pos, controller_eef_quat, controller_goal_quat)):
+            raise ValueError("Binary-goal execution requires synchronized native controller/body poses and previous goal")
+        if refresh_chunk:
+            if self.action_representation == GOAL_BINARY_REP:
+                self._anchor_pos = np.asarray(eef_pos, dtype=np.float64).copy()
+                self._anchor_quat = np.asarray(eef_quat, dtype=np.float64).copy()
             vla_input = {
                 "examples": [example],
                 "unnorm_key": self.unnorm_key,
@@ -146,6 +163,8 @@ class ModelClient:
             #   - image order : the ordering of those camera views
             #   - action normalization: unnorm_key must match the training dataset stats
             # ==============================================================================
+            if diagnostic_seed is not None:
+                vla_input["diagnostic_seed"] = int(diagnostic_seed)
             response = self.client.predict_action(vla_input)
             try:
                 actions_batch = response["data"]["actions"]  # (B, T, D), unnormalized server-side
@@ -154,9 +173,22 @@ class ModelClient:
                     f"Key 'actions' not found in response data: keys={list(response.get('data', {}).keys())}, "
                     f"full response={response}"
                 )
-            self.raw_actions = np.asarray(actions_batch)[0]  # (T, D)
+            batch = np.asarray(actions_batch)
+            expected_dim = 16 if self.action_representation == GOAL_BINARY_REP else 7
+            if (batch.ndim != 3 or batch.shape[0] != 1
+                    or batch.shape[1] < self.action_chunk_size or batch.shape[2] != expected_dim
+                    or not np.isfinite(batch).all()):
+                raise ValueError(f"Invalid action chunk for {self.action_interface}: {batch.shape}")
+            self.raw_actions = batch[0]  # (T, D), unnormalized server-side
 
         raw_actions = self.raw_actions[step % self.action_chunk_size][None]
+        if self.action_representation == GOAL_BINARY_REP:
+            if raw_actions.shape != (1, 16):
+                raise ValueError("Binary-goal checkpoint must return 16D actions")
+            goal = decode_goals(raw_actions, self._anchor_pos, self._anchor_quat)[0]
+            osc = goal_to_native_delta(goal, controller_eef_pos, controller_eef_quat, controller_goal_quat)
+            return {"raw_action": {"world_vector": osc[:3], "rotation_delta": osc[3:6],
+                "gripper_command": osc[6:7].copy(), "open_gripper": raw_actions[0, 7:8].copy()}}
         raw_action = {
             "world_vector": np.array(raw_actions[0, :3]),
             "rotation_delta": np.array(raw_actions[0, 3:6]),

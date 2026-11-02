@@ -266,6 +266,18 @@ class PolicyNormProcessor:
             )
         self._unnorm_key = unnorm_key  # may still be None for multi-key case
 
+        # UMI indexed checkpoints carry their complete fixed transform.
+        selected = norm_stats.get(unnorm_key, {})
+        if (selected.get("meta", {}).get("dataset_type") == "umi_indexed"
+                and selected.get("action", {}).get("normalization") == "mean_std"):
+            self._umi_mean_std = selected
+            self._action_representation = selected["meta"]["action_pose_repr"]
+            self._gripper_width_threshold = None
+            self._action_keys, self._state_keys = ["action.umi16"], ["state.umi16"]
+            self._action_key_dims, self._state_key_dims = {"action.umi16": 16}, {"state.umi16": 16}
+            self._transform = None
+            return
+
         # 1) Resolve which DataConfig was used at training.
         robot_type = _resolve_robot_type(cfg, unnorm_key=unnorm_key)
         if robot_type not in ROBOT_TYPE_CONFIG_MAP:
@@ -275,6 +287,26 @@ class PolicyNormProcessor:
                 "Make sure the example's data_registry/data_config.py is importable."
             )
         self._data_config = ROBOT_TYPE_CONFIG_MAP[robot_type]
+        if robot_type == "libero_franka_goal_binary":
+            from starVLA.dataloader.libero_action_contract import (
+                VERSION, REPRESENTATION, LAYOUT, GoalBinaryNormalizer,
+            )
+            action_stats = norm_stats[self._unnorm_key]["action"]
+            if cfg["datasets"]["vla_data"].get("action_type") != VERSION or action_stats.get("contract") != VERSION:
+                raise ValueError("Goal/binary checkpoint config and statistics do not declare the same contract")
+            self._goal_binary_normalizer = GoalBinaryNormalizer(
+                dict(contract=VERSION, action_layout=LAYOUT, action=action_stats))
+            self._action_representation = REPRESENTATION
+            self._gripper_width_threshold = None
+            self._action_keys = ["action.position", "action.quaternion", "action.gripper_open", "action.pad"]
+            self._action_key_dims = dict(zip(self._action_keys, (3, 4, 1, 8)))
+            self._state_keys, self._state_key_dims = [], {}
+            self._transform = ComposedModalityTransform(transforms=[])
+            return
+        self._action_representation = "controller_delta"
+        self._gripper_width_threshold: Optional[float] = None
+        self._umi16_q01: Optional[np.ndarray] = None
+        self._umi16_span: Optional[np.ndarray] = None
         self._action_keys: List[str] = list(self._data_config.action_keys)
         self._state_keys: List[str] = list(getattr(self._data_config, "state_keys", []))
 
@@ -294,6 +326,28 @@ class PolicyNormProcessor:
 
         # 4) Resolve per-key dims (handles multi-d action/state keys).
         stats_for_unnorm = norm_stats[unnorm_key]
+        if robot_type == "libero_franka_umi16":
+            # Training bypasses DataConfig.transform() for UMI16 labels and
+            # normalizes the entire vector with UMINormalizer. The saved
+            # checkpoint statistics are the same 16D q01/q99 values.
+            action_stats = stats_for_unnorm["action"]
+            q01 = np.asarray(action_stats["q01"], dtype=np.float32)
+            q99 = np.asarray(action_stats["q99"], dtype=np.float32)
+            if q01.shape != (16,) or q99.shape != (16,) or not np.isfinite(q01).all() or not np.isfinite(q99).all() or np.any(q99 - q01 < 1e-6):
+                raise ValueError("LIBERO UMI16 requires finite, nondegenerate 16D action q01/q99 statistics")
+            self._umi16_q01 = q01
+            self._umi16_span = q99 - q01
+            self._gripper_width_threshold = float((q01[7] + q99[7]) * 0.5)
+            self._action_representation = "libero_umi16"
+            self._action_keys = ["action.position", "action.quaternion", "action.gripper_width", "action.pad"]
+            self._action_key_dims = dict(zip(self._action_keys, (3, 4, 1, 8)))
+            self._state_keys = []
+            self._state_key_dims = {}
+            logger.info(
+                "PolicyNormProcessor ready: robot_type=%s, representation=%s, gripper_width_threshold=%f",
+                robot_type, self._action_representation, self._gripper_width_threshold,
+            )
+            return
         self._action_key_dims: Dict[str, int] = _infer_key_dims(
             self._data_config, stats_for_unnorm, self._action_keys, "action"
         )
@@ -326,6 +380,22 @@ class PolicyNormProcessor:
     # ------------------------------------------------------------------
     # Public properties
     # ------------------------------------------------------------------
+    @property
+    def action_contract(self):
+        if hasattr(self, "_goal_binary_normalizer"):
+            from starVLA.dataloader.libero_action_contract import VERSION, LAYOUT, OSC_SCALE
+            return dict(version=VERSION, layout=LAYOUT, gripper="0=closed,1=open", gripper_threshold=.5,
+                        anchor="chunk-start observation", osc_scale=OSC_SCALE.tolist())
+        return None
+
+    @property
+    def action_representation(self) -> str:
+        return self._action_representation
+
+    @property
+    def gripper_width_threshold(self) -> Optional[float]:
+        return self._gripper_width_threshold
+
     @property
     def action_keys(self) -> List[str]:
         return list(self._action_keys)
@@ -371,6 +441,19 @@ class PolicyNormProcessor:
         assert normalized_actions.ndim == 2, (
             f"Expected (T, D); got shape {normalized_actions.shape}"
         )
+        if hasattr(self, "_goal_binary_normalizer"):
+            return self._goal_binary_normalizer.denormalize_action(normalized_actions)
+        if hasattr(self, "_umi_mean_std"):
+            from starVLA.dataloader.umi_wyt import inverse_exported_actions
+            return inverse_exported_actions(normalized_actions, self._umi_mean_std["action"])
+        if self._action_representation == "libero_umi16":
+            if normalized_actions.shape[-1] != 16:
+                raise ValueError(f"LIBERO UMI16 expects 16D actions, got {normalized_actions.shape}")
+            # Match UMINormalizer.denormalize_action: clip to [-1, 1],
+            # then invert per-dimension q01/q99 scaling.
+            out = (np.clip(normalized_actions.astype(np.float32), -1.0, 1.0) + 1.0) * 0.5 * self._umi16_span + self._umi16_q01
+            out[..., 8:] = 0.0  # single-arm padding is never sent to LIBERO
+            return out
 
         # Split (T, D) into per-key {full_key: torch.Tensor[T, dim_k]}.
         data: Dict[str, torch.Tensor] = {}

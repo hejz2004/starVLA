@@ -1,0 +1,27 @@
+{
+  "training_job_id": "dlc1evg9vvosgrr1",
+  "training_output": "/mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Checkpoints/multiview-vlminit-umi98k-libero-16a100-b32-r1-20261031-140522",
+  "checkpoint": "/mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Checkpoints/multiview-vlminit-umi98k-libero-16a100-b32-r1-20261031-140522/checkpoints/steps_7500_pytorch_model.pt",
+  "evaluations": [
+    {
+      "benchmark": "libero",
+      "job": "/mnt/workspace/Native_Policy/user/hjz/starVLA/dlc-submit-01/jobs/libero_vlminit_umi98k_step7500_16a100_20261031.json",
+      "run_dir": "/mnt/workspace/Native_Policy/user/hjz/starVLA/dlc-submit-01/runs/libero_vlminit_umi98k_step7500_16a100_20261031",
+      "output": "/mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Evaluation/libero_vlminit_umi98k_step7500_16a100_20261031",
+      "gpus": 16,
+      "nodes": 2,
+      "expected": 2000,
+      "job_id": "dlc56saa3xeaxtci"
+    },
+    {
+      "benchmark": "libero_plus",
+      "job": "/mnt/workspace/Native_Policy/user/hjz/starVLA/dlc-submit-01/jobs/libero_plus_vlminit_umi98k_step7500_16a100_20261031.json",
+      "run_dir": "/mnt/workspace/Native_Policy/user/hjz/starVLA/dlc-submit-01/runs/libero_plus_vlminit_umi98k_step7500_16a100_20261031",
+      "output": "/mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Evaluation/libero_plus_vlminit_umi98k_step7500_16a100_20261031",
+      "gpus": 16,
+      "nodes": 2,
+      "expected": 10030,
+      "job_id": "dlc6upukrli84awz"
+    }
+  ]
+}

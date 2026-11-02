@@ -1,0 +1,119 @@
+{
+  "method": "Replay of recorded observations and predictions, not a new closed-loop evaluation",
+  "rows": [
+    {
+      "trial": 0,
+      "success": true,
+      "steps": 170,
+      "old_close_frames": 102,
+      "old_close_now_hold": 98,
+      "old_close_now_open": 3,
+      "old_close_now_close": 1,
+      "max_open_error_in_old_close_mm": 3.8686630196094334
+    },
+    {
+      "trial": 1,
+      "success": true,
+      "steps": 168,
+      "old_close_frames": 109,
+      "old_close_now_hold": 101,
+      "old_close_now_open": 5,
+      "old_close_now_close": 3,
+      "max_open_error_in_old_close_mm": 5.264233411452491
+    },
+    {
+      "trial": 2,
+      "success": true,
+      "steps": 157,
+      "old_close_frames": 92,
+      "old_close_now_hold": 91,
+      "old_close_now_open": 0,
+      "old_close_now_close": 1,
+      "max_open_error_in_old_close_mm": 1.4437311242403648
+    },
+    {
+      "trial": 3,
+      "success": true,
+      "steps": 171,
+      "old_close_frames": 102,
+      "old_close_now_hold": 100,
+      "old_close_now_open": 2,
+      "old_close_now_close": 0,
+      "max_open_error_in_old_close_mm": 6.394750319202558
+    },
+    {
+      "trial": 4,
+      "success": true,
+      "steps": 201,
+      "old_close_frames": 107,
+      "old_close_now_hold": 91,
+      "old_close_now_open": 9,
+      "old_close_now_close": 7,
+      "max_open_error_in_old_close_mm": 7.457619177144912
+    },
+    {
+      "trial": 5,
+      "success": false,
+      "steps": 280,
+      "old_close_frames": 92,
+      "old_close_now_hold": 28,
+      "old_close_now_open": 31,
+      "old_close_now_close": 33,
+      "max_open_error_in_old_close_mm": 9.466402432226413
+    },
+    {
+      "trial": 6,
+      "success": false,
+      "steps": 280,
+      "old_close_frames": 126,
+      "old_close_now_hold": 28,
+      "old_close_now_open": 46,
+      "old_close_now_close": 52,
+      "max_open_error_in_old_close_mm": 19.47202356260129
+    },
+    {
+      "trial": 7,
+      "success": true,
+      "steps": 170,
+      "old_close_frames": 102,
+      "old_close_now_hold": 95,
+      "old_close_now_open": 3,
+      "old_close_now_close": 4,
+      "max_open_error_in_old_close_mm": 3.6130006484948534
+    },
+    {
+      "trial": 8,
+      "success": false,
+      "steps": 280,
+      "old_close_frames": 106,
+      "old_close_now_hold": 38,
+      "old_close_now_open": 34,
+      "old_close_now_close": 34,
+      "max_open_error_in_old_close_mm": 9.839636477415745
+    },
+    {
+      "trial": 9,
+      "success": false,
+      "steps": 280,
+      "old_close_frames": 84,
+      "old_close_now_hold": 19,
+      "old_close_now_open": 38,
+      "old_close_now_close": 27,
+      "max_open_error_in_old_close_mm": 14.225197571745323
+    }
+  ],
+  "aggregate": {
+    "failed": {
+      "episodes": 4,
+      "old_close_frames": 408,
+      "old_close_now_open": 149,
+      "old_close_now_hold": 113
+    },
+    "passed": {
+      "episodes": 6,
+      "old_close_frames": 614,
+      "old_close_now_open": 22,
+      "old_close_now_hold": 576
+    }
+  }
+}

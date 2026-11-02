@@ -1,0 +1,105 @@
+# Single-PPU smoke using the same WYT five-stage data/model definition.
+# Pretrained VLM, state=True, full UMI indexes, no W&B by default.
+# 10 optimizer updates; microbatch=1 x accumulation=16 => effective batch 16.
+# No periodic checkpoint/evaluation; the trainer still writes final_model.
+run_id: smoke_umi_wyt_relative_state
+run_root_dir: playground/Checkpoints
+seed: 42
+wandb_entity: hejz26-tsinghua-university
+wandb_project: qwenpi-vla
+is_debug: false
+version_id: "0.21"
+
+framework:
+  name: DualStreamQwenPI
+  qwenvl:
+    base_vlm: ./playground/Pretrained_models/Qwen3-VL-2B-Instruct
+    load_weights: true
+    attn_implementation: sdpa
+    vl_hidden_dim: 2048
+    dual_stream:
+      enabled: true
+      interaction_indexes: [5, 11, 17, 23]
+      num_shared_tokens: 32
+      num_heads: 16
+      intermediate_size: 4096
+      gate_hidden_size: 256
+      gate_init_value: 0.01
+      gate_output_weight_std: 0.001
+      attention_dropout: 0.0
+  action_model:
+    # bimanual relative-EEF: 2 arms x [dpos(3), quat(4), gripper(1)]
+    action_dim: 16
+    state_dim: 16
+    # WYT baseline uses current absolute state. Set false for state ablation;
+    # relative action construction and the sampled data stay identical.
+    use_state: true
+    action_horizon: 16
+    # Independent flow-matching noise/time samples per data example.
+    repeated_diffusion_steps: 1
+    decoder_input_norm: layer_norm
+    diffusion_model_cfg:
+      cross_condition_norm: layer_norm
+
+datasets:
+  vlm_data:
+    dataset_py: vlm_datasets
+    dataformat: llava_json
+    dataset_use: sharegpt4v_coco
+    eval_dataset: sharegpt4v_coco
+    data_flatten: false
+    base_interval: 2
+    max_pixels: 307200
+    min_pixels: 784
+    model_max_length: 2048
+    model_type: qwen2.5vl
+    per_device_batch_size: 4
+
+  vla_data:
+    # Fixed WYT rules, five stages and statistics resolve from its pinned JSON plan.
+    dataset_py: umi_indexed
+    profile: wyt_umi_relative_v1
+    assets_root: /mnt/workspace/Native_Policy/user/hjz/umi_wyt_assets/clean20_sameprompt_relative_20261015_v1
+    umi_root: /mnt/nas/public/roban_umi
+    action_pose_repr: current_eef_relative  # Enforced by profile; world is rejected.
+    per_device_batch_size: 1
+    num_workers: 2
+
+trainer:
+  is_resume: false
+  save_full_state: false
+  save_format: pt
+  # Cap the same five-stage plan at ten optimizer updates.
+  max_train_steps: 10
+  num_warmup_steps: 0
+  # These intervals exceed the smoke length; final_model is still saved.
+  save_interval: 100000
+  # Retention applies only if the save interval is overridden.
+  keep_last_checkpoints: 1
+  eval_interval: 100000
+  learning_rate:
+    base: 2.5e-05
+    # Flat keys only: build_param_lr_groups recurses module.parameters() without
+    # dedup, so nested keys would duplicate params and crash AdamW.
+    qwen_vl_interface: 1.0e-05
+    action_model: 1.0e-04
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-06
+  freeze_modules: ''
+  loss_scale:
+    vla: 1.0
+    vlm: 0.1
+  max_grad_norm: 1.0
+  weight_decay: 0.0
+  logging_frequency: 1
+  gradient_clipping: 1.0
+  # Global optimizer batch = per_device_batch_size x world_size x accumulation.
+  gradient_accumulation_steps: 16
+  gradient_checkpointing: false
+
+  optimizer:
+    name: AdamW
+    betas: [0.9, 0.95]
+    eps: 1.0e-08
+    weight_decay: 1.0e-08

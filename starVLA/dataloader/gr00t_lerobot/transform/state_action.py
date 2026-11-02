@@ -18,8 +18,12 @@ import random
 from typing import Any, ClassVar
 
 import numpy as np
-import pytorch3d.transforms as pt
 import torch
+
+try:  # optional dep; not used by any transform in this fork
+    import pytorch3d.transforms as pt
+except ImportError:
+    pt = None
 from pydantic import Field, PrivateAttr, field_validator, model_validator
 
 from ..schema import DatasetMetadata, RotationType, StateActionMetadata

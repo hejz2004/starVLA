@@ -2827,6 +2827,18 @@ class LeRobotMixtureDataset(Dataset):
                     combined_state_stats = combine_modality_stats(filtered_state_stats)
                     tag_stats["state"] = combined_state_stats
             
+            # Custom datasets may train on a different action space than the
+            # source LeRobot columns. Save the statistics used on their labels.
+            tagged_datasets = [ds for ds in self.datasets if ds.tag == tag]
+            action_overrides = [ds.checkpoint_action_statistics() for ds in tagged_datasets
+                                if hasattr(ds, "checkpoint_action_statistics")]
+            if action_overrides:
+                if len(action_overrides) != len(tagged_datasets) or any(
+                    override != action_overrides[0] for override in action_overrides[1:]
+                ):
+                    raise ValueError(f"Inconsistent action statistics for tag {tag}")
+                tag_stats["action"] = action_overrides[0]
+
             # Add dataset counts
             tag_stats.update(self._get_dataset_counts(tag))
             

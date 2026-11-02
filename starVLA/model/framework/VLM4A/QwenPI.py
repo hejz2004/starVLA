@@ -78,6 +78,8 @@ class QwenPIDefaultConfig:
             # Legacy YAMLs may use future_action_window_size = action_horizon - 1;
             # apply_config_compat normalises both directions.
             "action_horizon": 16,
+            # Optional stateless normalization before action decoding.
+            "decoder_input_norm": "none",
             # Repeat factor for flow-matching loss
             "repeated_diffusion_steps": 2,
             # Inference denoising steps
@@ -99,6 +101,8 @@ class QwenPIDefaultConfig:
                 "norm_type": "ada_norm",
                 "positional_embeddings": None,
                 "attention_head_dim": 64,
+                # Optional normalization of VLM conditions before cross-attention K/V.
+                "cross_condition_norm": "none",
             },
         }
     )
@@ -217,11 +221,15 @@ class Qwen_PI(baseframework):
             actions_target = actions[:, -self.action_horizon :, :]  # (B, action_horizon, action_dim)
 
             repeated_diffusion_steps = (
-                self.config.framework.action_model.get("repeated_diffusion_steps", 4)
+                self.config.framework.action_model.get("repeated_diffusion_steps", 2)
                 if self.config and hasattr(self.config, "framework")
-                else 4
+                else 2
             )
-            repeated_diffusion_steps = 2  # NO repeat for big action FM
+            if (isinstance(repeated_diffusion_steps, (bool, np.bool_))
+                    or not isinstance(repeated_diffusion_steps, (int, np.integer))
+                    or repeated_diffusion_steps < 1):
+                raise ValueError("framework.action_model.repeated_diffusion_steps must be a positive integer")
+            repeated_diffusion_steps = int(repeated_diffusion_steps)
             actions_target_repeated = actions_target.repeat(repeated_diffusion_steps, 1, 1)
             # Repeat features for each layer
             vl_embs_list_repeated = [h.repeat(repeated_diffusion_steps, 1, 1) for h in vl_embs_list]
