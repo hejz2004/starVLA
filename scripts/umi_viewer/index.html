@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>UMI Atlas · Luna 数据浏览器</title><link rel="stylesheet" href="/static/style.css"><script defer src="/static/app.js"></script></head>
+<body>
+<header><a class="brand" href="/"><span class="logo">u</span><strong>UMI <span>Atlas</span></strong></a><div class="header-note">具身数据工作台 <span>/</span> LUNA ANNOTATIONS</div><span class="online"><i></i> ppu-dev · 只读</span></header>
+<div class="shell">
+<aside>
+<div class="section-label">DATASET EXPLORER</div><h1>从轨迹，读懂动作。</h1><p class="muted intro">浏览真实采集数据，对齐每一个动作与语言片段。</p>
+<div class="stats"><div><strong id="total-stat">—</strong><span>全部 episodes</span></div><div><strong>30 <small>Hz</small></strong><span>采样频率</span></div></div>
+<form id="search-form"><label for="search">搜索轨迹</label><div class="searchbox"><input id="search" placeholder="任务关键词 / episode ID" autocomplete="off"><button aria-label="搜索" title="搜索" type="submit">⌕</button></div>
+<label for="stage">数据划分</label><select id="stage"><option value="">全部数据</option><option value="stage_01">训练 · Stage 01</option><option value="stage_02">训练 · Stage 02</option><option value="stage_03">训练 · Stage 03</option><option value="stage_04">训练 · Stage 04</option><option value="stage_05">训练 · Stage 05</option><option value="validation">验证集</option><option value="excluded">未纳入当前训练 / 验证索引</option></select></form>
+<div class="list-top"><span id="result-count">正在连接数据源…</span><button id="random" class="text-button">随机探索 ↗</button></div>
+<div id="episode-list" class="episode-list" aria-live="polite"></div>
+<div class="pagination"><button id="prev">← 上一页</button><span id="page">1</span><button id="next">下一页 →</button></div>
+<div class="sidebar-footer"><span class="dot"></span> 原始文件只读 · 按需加载<br><span id="index-status">正在连接远程数据…</span></div>
+</aside>
+<main>
+<div id="notice" role="status" hidden></div>
+<div class="heading"><div><div class="section-label">EPISODE INSPECTOR</div><h2 id="episode-title">正在读取轨迹</h2></div><a id="export" class="button" href="#" download>导出当前标注 ↓</a></div>
+<div id="task" class="task-title">加载原始任务描述…</div>
+<div class="meta-row"><span id="stage-badge" class="pill">—</span><span id="duration-meta">—</span><span id="frames-meta">—</span><span id="coverage-meta">—</span><span class="subtle">Luna fine-grained</span></div>
+<section class="workspace">
+<div class="view-area">
+<div class="section-bar"><h3>多视角观测</h3><label class="inline-label" for="head-camera">头部视角 <select id="head-camera"><option value="head_left">Head left</option><option value="head_right">Head right</option></select></label></div>
+<div class="video-grid">
+<div class="video-card primary"><video id="head" muted playsinline preload="metadata"></video><span class="camera-tag" id="head-tag">HEAD LEFT</span><span class="live-tag">原始视频</span></div>
+<div class="video-card"><video id="left" muted playsinline preload="metadata"></video><span class="camera-tag">WRIST LEFT</span></div>
+<div class="video-card"><video id="right" muted playsinline preload="metadata"></video><span class="camera-tag">WRIST RIGHT</span></div>
+</div>
+<div id="video-status" class="muted video-status">正在加载相机元数据…</div>
+<div class="transport"><button id="play" class="play" disabled>▶ 播放</button><button id="back-frame" title="上一帧（←）" aria-label="上一帧">‹</button><button id="next-frame" title="下一帧（→）" aria-label="下一帧">›</button><span id="time" class="mono">00:00.00 / 00:00.00</span><select id="speed" aria-label="播放速度"><option value=".25">0.25×</option><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select><label class="loop-label"><input id="loop" type="checkbox">片段循环</label></div>
+<input id="scrubber" type="range" min="0" max="1" step=".001" value="0" aria-label="视频时间">
+<div class="timeline-labels"><span>LUNA 分段 <b id="segment-count">—</b></span><span>点击片段跳转 · 灰色为无效标注</span></div>
+<div id="timeline" class="timeline" aria-label="Luna 标注时间轴"></div>
+<div class="ruler"><span>0 s</span><span id="mid-time">—</span><span id="end-time">—</span></div>
+<div class="current-prompt"><span class="section-label">CURRENT INSTRUCTION</span><p id="current-instruction">—</p><div><span id="current-segment">—</span><span id="window-status">—</span></div></div>
+</div>
+<div class="annotations"><div class="section-bar"><h3>Luna 精细标注</h3><span class="tiny-pill">逐帧对齐</span></div><input id="annotation-filter" placeholder="在当前轨迹中搜索标注…" aria-label="搜索当前轨迹标注"><div id="segment-list"></div></div>
+</section>
+<section class="signals"><div class="section-bar"><h3>运动信号</h3><span class="muted">原始世界坐标 · 点击图表跳转</span></div><div class="chart-grid"><div><h4>末端位置 <span>X / Y / Z · m</span></h4><canvas id="position-chart" height="155" aria-label="左右末端位置曲线"></canvas><div class="legend"><span style="--color:#198677">robot1 X</span><span style="--color:#62ad91">Y</span><span style="--color:#aacabd">Z</span><span style="--color:#cf7849">robot2 X</span><span style="--color:#e3a565">Y</span><span style="--color:#efca9f">Z</span></div></div><div><h4>夹爪信号 <span>原始 magnetic encoder 值</span></h4><canvas id="gripper-chart" height="155" aria-label="左右夹爪原始信号"></canvas><div class="legend"><span style="--color:#198677">robot1</span><span style="--color:#cf7849">robot2</span><span id="frame-info" class="mono"></span></div></div></div></section>
+<details class="provenance"><summary>数据来源与时间对齐说明</summary><p>视频按各相机 from_timestamp + episode 时间同步。浏览器连续播放会校正视角漂移；不是训练解码器逐帧 PTS 复现。标注区间由逐帧 annotation 字段的连续变化构建，使用清洗后的 timestamp；原始标注时间保留在导出 JSON 中。浅灰片段为 annotation.valid=false，不代表整个 episode 不可用。</p><p>训练 anchor 提示来自当前冻结索引 ranges，按每段起点每 6 帧取样，动作目标为未来连续 16 帧。曲线显示未归一化原始信号，绘图最多抽取 900 点，游标数值读取完整逐帧数据。</p><pre id="source-info"></pre></details>
+<footer>UMI ATLAS <span>真实数据 / 精细语言 / 连续动作</span><span>Space 播放暂停 · ← → 逐帧查看</span></footer>
+</main></div>
+</body></html>
