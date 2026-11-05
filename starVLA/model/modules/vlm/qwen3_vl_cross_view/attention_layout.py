@@ -5,7 +5,7 @@ import torch
 
 def global_attention_indexes(config):
     cfg = getattr(config, "cross_view_attention", None) or {}
-    unknown = set(cfg) - {"enabled", "start_layer"}
+    unknown = set(cfg) - {"enabled", "start_layer", "num_register_tokens"}
     if unknown:
         raise ValueError(f"Unknown cross_view_attention settings: {sorted(unknown)}")
     if not cfg.get("enabled", False):
@@ -16,6 +16,31 @@ def global_attention_indexes(config):
     if isinstance(start, bool) or not isinstance(start, Integral) or not 0 <= start < depth:
         raise ValueError(f"cross_view_attention.start_layer must be an integer in [0, {depth}), got {start}")
     return tuple(range(int(start), depth, 2))
+
+
+def register_token_count(config):
+    cfg = getattr(config, "cross_view_attention", None) or {}
+    count = cfg.get("num_register_tokens", 0)
+    if isinstance(count, bool) or not isinstance(count, Integral) or count < 0:
+        raise ValueError(f"cross_view_attention.num_register_tokens must be a nonnegative integer, got {count}")
+    return int(count)
+
+
+def view_register_layout(cu_seqlens, num_register_tokens):
+    """Prepend registers to each image while retaining the original patch order."""
+    num_images = cu_seqlens.numel() - 1
+    image_ids = torch.arange(num_images, device=cu_seqlens.device)
+    local_cu_seqlens = cu_seqlens + num_register_tokens * torch.arange(
+        num_images + 1, device=cu_seqlens.device, dtype=cu_seqlens.dtype
+    )
+    patch_lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+    num_patches = int(cu_seqlens[-1].item())
+    patch_image_ids = torch.repeat_interleave(image_ids, patch_lengths, output_size=num_patches)
+    patch_indices = torch.arange(num_patches, device=cu_seqlens.device) + num_register_tokens * (patch_image_ids + 1)
+    register_indices = (
+        local_cu_seqlens[:-1].long().unsqueeze(1) + torch.arange(num_register_tokens, device=cu_seqlens.device)
+    ).flatten()
+    return local_cu_seqlens, patch_indices, register_indices
 
 
 def scene_cu_seqlens(grid_thw, counts, dtype=torch.int32):

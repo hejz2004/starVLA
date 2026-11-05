@@ -19,6 +19,7 @@ framework:
       enabled: true
       # Zero-based: layers 0..15 local; 16,18,20,22 global; 17,19,21,23 local.
       start_layer: 16
+      num_register_tokens: 4
   action_model:
     action_dim: 16
     state_dim: 16

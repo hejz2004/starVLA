@@ -22,8 +22,14 @@
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Union
 
-# Vendored from transformers 4.57.6; late alternating attention, no new parameters.
-from .attention_layout import global_attention_indexes, scene_cu_seqlens, image_counts_from_input_ids
+# Vendored from transformers 4.57.6; late alternating attention with optional per-view registers.
+from .attention_layout import (
+    global_attention_indexes,
+    scene_cu_seqlens,
+    image_counts_from_input_ids,
+    register_token_count,
+    view_register_layout,
+)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -604,6 +610,13 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
         if getattr(config, "dual_stream", {}).get("enabled", False):
             raise ValueError("dual_stream is retired; use cross_view_attention on QwenPI")
         self.global_attention_indexes = global_attention_indexes(config)
+        self.num_register_tokens = register_token_count(config)
+        # Each view starts from the same learned bank, then maintains its own state.
+        self.register_tokens = (
+            nn.Embedding(self.num_register_tokens, config.hidden_size) if self.num_register_tokens else None
+        )
+        if self.register_tokens is not None:
+            nn.init.normal_(self.register_tokens.weight, std=getattr(config, "initializer_range", 0.02))
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
         merge_size = self.spatial_merge_size
@@ -748,21 +761,57 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
         # Different camera pixel grids are not a shared 2D frame. Global
         # attention uses identity RoPE; absolute image embeddings remain.
         global_position_embeddings = (torch.ones_like(emb), torch.zeros_like(emb))
+
+        patch_indices = None
+        if self.num_register_tokens:
+            if (grid_thw[:, 0] != 1).any():
+                raise ValueError("Per-view register tokens support static image views only")
+            cu_seqlens, patch_indices, register_indices = view_register_layout(cu_seqlens, self.num_register_tokens)
+            num_tokens = seq_len + len(grid_thw) * self.num_register_tokens
+            # Absolute image positions were added to patches above. Registers receive none.
+            registers = self.register_tokens.weight.to(dtype=hidden_states.dtype)
+            registers = registers.unsqueeze(0).expand(len(grid_thw), -1, -1).reshape(-1, hidden_states.shape[-1])
+            hidden_states = (
+                hidden_states.new_zeros(num_tokens, hidden_states.shape[-1])
+                .index_copy(0, patch_indices, hidden_states)
+                .index_copy(0, register_indices, registers)
+            )
+            # Registers have no spatial coordinates: their RoPE is always identity.
+            local_cos = emb.new_ones(num_tokens, emb.shape[-1]).index_copy(0, patch_indices, position_embeddings[0])
+            local_sin = emb.new_zeros(num_tokens, emb.shape[-1]).index_copy(0, patch_indices, position_embeddings[1])
+            position_embeddings = (local_cos, local_sin)
+
         deepstack_feature_lists = []
         for layer_num, blk in enumerate(self.blocks):
             is_global = layer_num in self.global_attention_indexes
-            hidden_states = blk(
-                hidden_states,
+            # Global blocks only see patches; register states bypass the entire block unchanged.
+            block_input = (
+                hidden_states.index_select(0, patch_indices)
+                if is_global and patch_indices is not None
+                else hidden_states
+            )
+            block_output = blk(
+                block_input,
                 cu_seqlens=global_cu_seqlens if is_global else cu_seqlens,
                 position_embeddings=global_position_embeddings if is_global else position_embeddings,
                 **kwargs,
             )
+            hidden_states = (
+                hidden_states.index_copy(0, patch_indices, block_output)
+                if is_global and patch_indices is not None
+                else block_output
+            )
             if layer_num in self.deepstack_visual_indexes:
+                patch_states = (
+                    hidden_states.index_select(0, patch_indices) if patch_indices is not None else hidden_states
+                )
                 deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(layer_num)](
-                    hidden_states
+                    patch_states
                 )
                 deepstack_feature_lists.append(deepstack_feature)
 
+        if patch_indices is not None:
+            hidden_states = hidden_states.index_select(0, patch_indices)
         hidden_states = self.merger(hidden_states)
 
         return hidden_states, deepstack_feature_lists

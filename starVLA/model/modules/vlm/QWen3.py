@@ -82,6 +82,10 @@ class _QWen3_VL_Interface(nn.Module):
             model = model_class(hf_config).to(torch.bfloat16)
         if cross_view.get("enabled", False):
             logger.info(f"QwenPI cross-view global layers (zero-based): {model.model.visual.global_attention_indexes}")
+        if cross_view.get("num_register_tokens", 0):
+            logger.info(
+                f"QwenPI per-view register tokens: {model.model.visual.num_register_tokens} (no position encoding)"
+            )
         processor = AutoProcessor.from_pretrained(model_id)
         processor.tokenizer.padding_side = "left"
 
