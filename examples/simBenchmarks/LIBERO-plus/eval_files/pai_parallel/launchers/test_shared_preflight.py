@@ -35,6 +35,16 @@ class PreflightTests(unittest.TestCase):
         second=self.execute();self.assertEqual(second.returncode,0,second.stderr)
         self.assertTrue((self.run/'asset_links/articulated_objects/wooden_cabinet.xml').is_file())
         self.assertTrue((self.run/'libero_source/libero/libero/assets').is_symlink())
+    def test_qwenpi_cross_view_checkpoint_is_accepted(self):
+        self.cfg['framework']['name']='QwenPI'
+        self.cfg['framework']['qwenvl']={'cross_view_attention':{'enabled':True,'start_layer':16}}
+        self.config.write_text(yaml.safe_dump(self.cfg))
+        result=self.execute();self.assertEqual(result.returncode,0,result.stderr)
+    def test_unrelated_framework_is_rejected(self):
+        self.cfg['framework']['name']='UnrelatedPolicy'
+        self.config.write_text(yaml.safe_dump(self.cfg))
+        result=self.execute();self.assertNotEqual(result.returncode,0)
+        self.assertIn('anchored-goal binary',result.stderr)
     def test_old_width_checkpoint_rejected_before_model_loading(self):
         self.cfg['datasets']['vla_data']['action_type']='libero_umi16'
         self.config.write_text(yaml.safe_dump(self.cfg))

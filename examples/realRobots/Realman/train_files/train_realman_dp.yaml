@@ -61,7 +61,7 @@ datasets:
 
     # Used only when an example has no language annotation.
     default_prompt: "perform the requested manipulation task"
-    CoT_prompt: "Your task is {instruction}. Identify the key objects and locate their bounding boxes in [x1,y1,x2,y2] format."
+    CoT_prompt: "{instruction}"  # Raw task instruction; no CoT/grounding wrapper.
     per_device_batch_size: 8
     load_all_data_for_training: true
     obs_image_size: [224, 224]

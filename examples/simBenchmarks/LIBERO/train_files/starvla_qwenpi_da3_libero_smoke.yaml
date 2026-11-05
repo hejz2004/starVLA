@@ -60,7 +60,7 @@ datasets:
     # Pose-only q01/q99 affine transform without clipping; gripper remains binary 0/1.
     normalization_statistics: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LIBERO_OSC_GOAL_BINARY_V1/statistics.json
     sequential_step_sampling: False
-    CoT_prompt: "Your task is {instruction}. To identify the key objects for your task. Locate their bounding boxes in [x1,y1,x2,y2] format."
+    CoT_prompt: "{instruction}"  # Raw task instruction; no CoT/grounding wrapper.
     # Single-node 16 PPU: 16 x 16 x gradient_accumulation_steps(1) = global batch 256.
     per_device_batch_size: 1
     load_all_data_for_training: true

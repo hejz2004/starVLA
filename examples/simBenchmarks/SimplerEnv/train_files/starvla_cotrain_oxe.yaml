@@ -59,7 +59,7 @@ datasets:
     data_root_dir: playground/Datasets/OXE_LEROBOT_DATASET
     data_mix: bridge_rt_1 # bridge_rt_1
     action_type: delta_ee
-    CoT_prompt: "Your task is {instruction}. To identify the key objects for your task. Locate their bounding boxes in [x1,y1,x2,y2] format."
+    CoT_prompt: "{instruction}"  # Raw task instruction; no CoT/grounding wrapper.
     per_device_batch_size: 16
     load_all_data_for_training: true
     obs_image_size: [224, 224]

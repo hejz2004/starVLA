@@ -55,7 +55,7 @@ datasets:
     # LIBERO-specific q01/q99 statistics over all complete 16-step windows.
     normalization_statistics: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LEROBOT_LIBERO_DATA/libero_umi16_statistics_h16.json
     sequential_step_sampling: False
-    CoT_prompt: "Your task is {instruction}. To identify the key objects for your task. Locate their bounding boxes in [x1,y1,x2,y2] format."
+    CoT_prompt: "{instruction}"  # Raw task instruction; no CoT/grounding wrapper.
     # Single-node 16 PPU: 16 x 16 x gradient_accumulation_steps(1) = global batch 256.
     per_device_batch_size: 16
     load_all_data_for_training: true

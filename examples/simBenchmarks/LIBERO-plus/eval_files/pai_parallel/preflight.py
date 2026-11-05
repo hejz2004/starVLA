@@ -36,7 +36,7 @@ def main():
     checkpoint=Path(os.environ["CKPT_PATH"]).resolve(strict=True)
     cfgpath=checkpoint.parent.parent/"config.yaml";statspath=checkpoint.parent.parent/"dataset_statistics.json"
     cfg=yaml.safe_load(cfgpath.read_text());am=cfg["framework"]["action_model"]
-    if cfg["framework"]["name"]!="DualStreamQwenPI" or am["action_dim"]!=16 or am["action_horizon"]!=16 or am["num_inference_timesteps"]!=4 or am.get("use_state",False) or cfg["datasets"]["vla_data"].get("action_type")!=VERSION:
+    if cfg["framework"]["name"] not in ("QwenPI", "DualStreamQwenPI") or am["action_dim"]!=16 or am["action_horizon"]!=16 or am["num_inference_timesteps"]!=4 or am.get("use_state",False) or cfg["datasets"]["vla_data"].get("action_type")!=VERSION:
         raise ValueError("This adapter requires the latest LIBERO anchored-goal binary/chunk16/flow4 checkpoint")
     stats=json.loads(statspath.read_text())
     if set(stats)!={"franka"}:raise ValueError("Expected matched franka statistics")
