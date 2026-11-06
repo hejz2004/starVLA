@@ -8,8 +8,6 @@ import torch
 from starVLA.model.tools import has_flash_attn  # unified flash-attn detection (GPU / NPU)
 from starVLA.training.trainer_utils import initialize_overwatch
 from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
-from transformers.models.qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig
-from omegaconf import OmegaConf
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 logger = initialize_overwatch(__name__)
@@ -52,46 +50,32 @@ class _QWen3_VL_Interface(nn.Module):
         qwenvl_config = config.framework.get("qwenvl", {})
         model_id = qwenvl_config.get("base_vlm", "Qwen/Qwen3-VL-4B-Instruct")
         attn_implementation = qwenvl_config.get("attn_implementation", "sdpa")
-        attn_implementation = "sdpa"
         # Fallback to sdpa if flash_attention_2 is requested but flash_attn is not installed
         if attn_implementation == "flash_attention_2":
             if not has_flash_attn():
                 print("[WARNING] flash_attn not installed, falling back to sdpa")
-                attn_implementation = "sdpa"
-
-        if qwenvl_config.get("dual_stream"):
-            raise ValueError("dual_stream was removed; use QwenPI with cross_view_attention")
-        cross_view = qwenvl_config.get("cross_view_attention", {}) or {}
-        cross_view = (
-            OmegaConf.to_container(cross_view, resolve=True)
-            if OmegaConf.is_config(cross_view) else dict(cross_view)
+        
+        model = Qwen3VLForConditionalGeneration.from_pretrained(
+            model_id,
+            attn_implementation=attn_implementation,
+            dtype=torch.bfloat16,
+            ignore_mismatched_sizes=True, # resize image no longer needed? @TODO check bug
         )
-        model_class = Qwen3VLForConditionalGeneration
-        hf_config = Qwen3VLConfig.from_pretrained(model_id)
-        if cross_view:
-            from .qwen3_vl_cross_view import Qwen3VLForConditionalGeneration as CrossViewModel
-            hf_config.vision_config.cross_view_attention = cross_view
-            model_class = CrossViewModel
-        if bool(qwenvl_config.get("load_weights", True)):
-            model = model_class.from_pretrained(
-                model_id, config=hf_config, attn_implementation=attn_implementation,
-                dtype=torch.bfloat16, ignore_mismatched_sizes=True,
-            )
-        else:
-            hf_config._attn_implementation = attn_implementation
-            model = model_class(hf_config).to(torch.bfloat16)
-        if cross_view.get("enabled", False):
-            logger.info(f"QwenPI cross-view global layers (zero-based): {model.model.visual.global_attention_indexes}")
-        if cross_view.get("num_register_tokens", 0):
-            logger.info(
-                f"QwenPI per-view register tokens: {model.model.visual.num_register_tokens} (no position encoding)"
-            )
         processor = AutoProcessor.from_pretrained(model_id)
         processor.tokenizer.padding_side = "left"
 
         self.model = model
         self.processor = processor
         self.config = config
+        gate_cfg = qwenvl_config.get("language_gate", {}) or {}
+        self.language_conditioner = None
+        if gate_cfg.get("enabled", False):
+            from .qwen3_vl_language_gate import FrozenLanguageConditioner, install_language_gates
+            install_language_gates(self.model.model.visual, gate_cfg.get("layers", [5, 11, 17, 23]))
+            self.language_conditioner = FrozenLanguageConditioner(
+                gate_cfg.get("clip_model", "openai/clip-vit-base-patch32"),
+                self.model.config.vision_config.hidden_size,
+            )
 
         # alin qwen3 with qwen2.5
         self.model.config.hidden_size = self.model.config.text_config.hidden_size
@@ -109,10 +93,21 @@ class _QWen3_VL_Interface(nn.Module):
         Forward pass delegating to underlying Qwen2.5-VL backbone.
         """
 
-        with torch.autocast("cuda", dtype=torch.bfloat16):
-            outputs = self.model(
-                **kwargs,
-            )
+        from contextlib import nullcontext
+        from .qwen3_vl_language_gate import language_gate_context
+
+        instructions = kwargs.pop("gate_instructions", None)
+        image_sample_ids = kwargs.pop("gate_image_sample_ids", None)
+        context = nullcontext()
+        if self.language_conditioner is not None:
+            if instructions is None or image_sample_ids is None:
+                raise ValueError("Language gates require original instructions and image ownership")
+            if kwargs.get("pixel_values_videos") is not None:
+                raise ValueError("Language gates currently support camera images, not videos")
+            condition = self.language_conditioner(instructions)
+            context = language_gate_context(condition, image_sample_ids)
+        with context, torch.autocast("cuda", dtype=torch.bfloat16):
+            outputs = self.model(**kwargs)
 
         return outputs
 
@@ -191,7 +186,14 @@ class _QWen3_VL_Interface(nn.Module):
             labels[labels == self.processor.tokenizer.pad_token_id] = -100  ## mask out pad tokens as well
             batch_inputs["labels"] = labels
 
-        return batch_inputs.to(self.model.device)
+        batch_inputs = batch_inputs.to(self.model.device)
+        if self.language_conditioner is not None:
+            batch_inputs["gate_instructions"] = list(instructions)
+            batch_inputs["gate_image_sample_ids"] = torch.tensor(
+                [sample for sample, views in enumerate(images) for _ in views],
+                device=self.model.device, dtype=torch.long,
+            )
+        return batch_inputs
 
 
 if __name__ == "__main__":

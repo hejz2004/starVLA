@@ -537,7 +537,12 @@ class VLATrainer(TrainerUtils):
     def _log_metrics(self, metrics):
         """Record training metrics."""
         rank = dist.get_rank() if dist.is_initialized() else 0
-        if self.completed_steps % self.config.trainer.logging_frequency == 0 and rank == 0:
+        interface = getattr(_unwrap_model(self.accelerator, self.model), "qwen_vl_interface", None)
+        visual = getattr(getattr(getattr(interface, "model", None), "model", None), "visual", None)
+        moments = getattr(visual, "gate_moments", None)
+        gate_metrics = moments.pop() if moments is not None else {}
+        metrics.update(gate_metrics)
+        if (self.completed_steps % self.config.trainer.logging_frequency == 0 or gate_metrics) and rank == 0:
             last_lrs = self.lr_scheduler.get_last_lr()
             for i, group in enumerate(self.optimizer.param_groups):
                 group_name = group.get("name", str(i))
@@ -688,6 +693,14 @@ class VLATrainer(TrainerUtils):
 
     def _train_step(self, batch_vla, batch_vlm=None):
         """Execute single training step."""
+        interface = getattr(_unwrap_model(self.accelerator, self.model), "qwen_vl_interface", None)
+        visual = getattr(getattr(getattr(interface, "model", None), "model", None), "visual", None)
+        moments = getattr(visual, "gate_moments", None)
+        if moments is not None:
+            frequency = int(self.config.trainer.get("gate_logging_frequency", 100))
+            if frequency < 1:
+                raise ValueError("gate_logging_frequency must be positive")
+            moments.enabled = (self.completed_steps + 1) % frequency == 0
         with self.accelerator.accumulate(self.model):
             self.optimizer.zero_grad()
 

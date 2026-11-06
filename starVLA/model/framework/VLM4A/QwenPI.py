@@ -59,8 +59,7 @@ class QwenPIDefaultConfig:
             # Attention implementation: "flash_attention_2" | "eager" | "sdpa"
             "attn_implementation": "flash_attention_2",
             "load_weights": True,
-            # Opt-in late alternating attention; null selects floor(2*depth/3).
-            "cross_view_attention": {"enabled": False, "start_layer": None, "num_register_tokens": 0},
+            "language_gate": {"enabled": False, "layers": [5, 11, 17, 23]},
             # VLM hidden dimension (auto-set at runtime from model config)
             "vl_hidden_dim": 2048,
             # Number of VL transformer layers (auto-set at runtime)
