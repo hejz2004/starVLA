@@ -292,12 +292,16 @@ class VLATrainer(TrainerUtils):
     def _init_swanlab(self):
         """Initialize SwanLab on rank zero; keep distributed startup synchronized."""
         self._swanlab_enabled = False
-        if os.environ.get("SWANLAB_MODE") == "disabled":
+        self._require_swanlab_online = os.environ.get("REQUIRE_SWANLAB_ONLINE") == "1"
+        if os.environ.get("SWANLAB_MODE") == "disabled" and not self._require_swanlab_online:
             self.accelerator.wait_for_everyone()
             return
+        online_ok = torch.zeros(1, dtype=torch.int32, device=self.accelerator.device)
         if self.accelerator.is_main_process:
             try:
-                wandb.init(
+                if self._require_swanlab_online and os.environ.get("SWANLAB_MODE", "online") != "online":
+                    raise RuntimeError("This run requires SwanLab online mode")
+                run = wandb.init(
                     name=self.config.run_id,
                     logdir=os.path.join(self.config.output_dir, "swanlog"),
                     project=self.config.get("swanlab_project", self.config.get("wandb_project", "starvla")),
@@ -307,10 +311,25 @@ class VLATrainer(TrainerUtils):
                     group="vla-train",
                     config=self._swanlab_config_dict(),
                 )
+                if self._require_swanlab_online:
+                    if run is None or run.mode != "online" or not run.url:
+                        raise RuntimeError("SwanLab did not return an online experiment URL")
+                    Path(self.config.output_dir, "swanlab_online_ready.json").write_text(
+                        json.dumps({"run_id": self.config.run_id, "url": run.url,
+                                    "swanlab_run_id": run.id, "mode": run.mode,
+                                    "initialized_at": time.time()}, indent=2) + "\n"
+                    )
                 self._swanlab_enabled = True
+                online_ok.fill_(1)
             except Exception as exc:
-                logger.warning(f"SwanLab init failed; continuing without SwanLab: {exc}")
+                # Avoid echoing credential-bearing SDK exception messages.
+                logger.warning("SwanLab initialization failed: %s", type(exc).__name__)
                 self._swanlab_enabled = False
+        if self._require_swanlab_online:
+            if dist.is_initialized():
+                dist.broadcast(online_ok, src=0)
+            if not bool(online_ok.item()):
+                raise RuntimeError("Required SwanLab online initialization failed; training aborted")
         # Rendezvous after rank-0 SwanLab init. Otherwise a slow or failing init on
         # rank 0 lets the other ranks reach the first collective alone and
         # eventually hit an NCCL watchdog timeout.
@@ -564,7 +583,9 @@ class VLATrainer(TrainerUtils):
                     wandb.log(metrics, step=self.completed_steps)
                 except Exception as exc:
                     self._swanlab_enabled = False
-                    logger.warning(f"SwanLab log failed; disabling SwanLab: {exc}")
+                    if getattr(self, "_require_swanlab_online", False):
+                        raise RuntimeError("Required SwanLab logging failed; aborting training") from None
+                    logger.warning("SwanLab logging failed: %s", type(exc).__name__)
             logger.info(f"Step {self.completed_steps}, Loss: {metrics})")
 
     def _create_data_iterators(self):

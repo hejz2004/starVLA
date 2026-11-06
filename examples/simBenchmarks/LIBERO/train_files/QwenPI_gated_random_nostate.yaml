@@ -1,0 +1,97 @@
+run_id: qwenpi-gated-random-nostate-libero-16a100-b32-20261106-161347
+run_root_dir: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Checkpoints
+seed: 42
+wandb_entity: hejz26-tsinghua-university
+wandb_project: qwenpi-vla
+is_debug: false
+version_id: '0.21'
+framework:
+  name: QwenPI
+  qwenvl:
+    base_vlm: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Pretrained_models/Qwen3-VL-2B-Instruct
+    load_weights: false
+    attn_implementation: sdpa
+    vl_hidden_dim: 2048
+    language_gate:
+      enabled: true
+      layers: [5, 11, 17, 23]
+      clip_model: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Pretrained_models/clip-vit-base-patch32
+  action_model:
+    action_dim: 16
+    state_dim: 16
+    use_state: false
+    action_horizon: 16
+    repeated_diffusion_steps: 1
+    decoder_input_norm: layer_norm
+    diffusion_model_cfg:
+      cross_condition_norm: layer_norm
+datasets:
+  vlm_data:
+    dataset_py: vlm_datasets
+    dataformat: llava_json
+    dataset_use: sharegpt4v_coco
+    eval_dataset: sharegpt4v_coco
+    data_flatten: false
+    base_interval: 2
+    max_pixels: 307200
+    min_pixels: 784
+    model_max_length: 2048
+    model_type: qwen2.5vl
+    per_device_batch_size: 4
+  vla_data:
+    dataset_py: lerobot_datasets
+    data_root_dir: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LEROBOT_LIBERO_DATA
+    data_mix: libero_all_anchored_osc_goal_binary
+    drop_incomplete_action_chunks: true
+    action_type: libero-anchored-osc-goal-binary-v1
+    action_horizon: 16
+    controller_goal_root: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LIBERO_OSC_GOAL_BINARY_V1
+    include_state: false
+    action_mode: abs
+    state_action_dtype: float32
+    normalization_statistics: /mnt/workspace/Native_Policy/user/hjz/starVLA/playground/Datasets/LIBERO_OSC_GOAL_BINARY_V1/statistics.json
+    sequential_step_sampling: false
+    CoT_prompt: '{instruction}'
+    per_device_batch_size: 32
+    load_all_data_for_training: true
+    video_backend: torchvision_av
+    image_size:
+    - 224
+    - 224
+    num_workers: 4
+    prefetch_factor: 2
+    pin_memory: false
+trainer:
+  pretrained_checkpoint: null
+  is_resume: false
+  max_train_steps: 7500
+  num_warmup_steps: 375
+  save_interval: 2500
+  keep_last_checkpoints: 3
+  eval_interval: 10000000
+  learning_rate:
+    base: 3.0e-05
+    qwen_vl_interface: 1.0e-05
+    action_model: 0.0001
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-06
+  freeze_modules: ''
+  loss_scale:
+    vla: 1.0
+    vlm: 0.1
+  max_grad_norm: 1.0
+  weight_decay: 0.0
+  logging_frequency: 10
+  gate_logging_frequency: 100
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+  gradient_checkpointing: false
+  optimizer:
+    name: AdamW
+    betas:
+    - 0.9
+    - 0.95
+    eps: 1.0e-08
+    weight_decay: 1.0e-08
+swanlab_project: qwenpi-vla

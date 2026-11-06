@@ -7,7 +7,7 @@ from typing import Optional
 import torch
 from starVLA.model.tools import has_flash_attn  # unified flash-attn detection (GPU / NPU)
 from starVLA.training.trainer_utils import initialize_overwatch
-from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+from transformers import AutoProcessor, Qwen3VLConfig, Qwen3VLForConditionalGeneration
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 logger = initialize_overwatch(__name__)
@@ -54,13 +54,19 @@ class _QWen3_VL_Interface(nn.Module):
         if attn_implementation == "flash_attention_2":
             if not has_flash_attn():
                 print("[WARNING] flash_attn not installed, falling back to sdpa")
-        
-        model = Qwen3VLForConditionalGeneration.from_pretrained(
-            model_id,
-            attn_implementation=attn_implementation,
-            dtype=torch.bfloat16,
-            ignore_mismatched_sizes=True, # resize image no longer needed? @TODO check bug
-        )
+                attn_implementation = "sdpa"
+
+        hf_config = Qwen3VLConfig.from_pretrained(model_id)
+        if bool(qwenvl_config.get("load_weights", True)):
+            model = Qwen3VLForConditionalGeneration.from_pretrained(
+                model_id, config=hf_config,
+                attn_implementation=attn_implementation,
+                dtype=torch.bfloat16, ignore_mismatched_sizes=True,
+            )
+        else:
+            # Read architecture/tokenizer only; never load VLM checkpoint tensors.
+            hf_config._attn_implementation = attn_implementation
+            model = Qwen3VLForConditionalGeneration(hf_config).to(torch.bfloat16)
         processor = AutoProcessor.from_pretrained(model_id)
         processor.tokenizer.padding_side = "left"
 

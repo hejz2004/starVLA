@@ -58,6 +58,13 @@ PY
 
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
 export SWANLAB_MODE="${SWANLAB_MODE:-online}"
+if [[ -n "${SWANLAB_API_KEY_FILE:-}" ]]; then
+    [[ -s "${SWANLAB_API_KEY_FILE}" ]]
+    export SWANLAB_API_KEY="$(cat "${SWANLAB_API_KEY_FILE}")"
+fi
+if [[ "${REQUIRE_SWANLAB_ONLINE:-0}" == 1 ]]; then
+    [[ "${SWANLAB_MODE}" == online && -n "${SWANLAB_API_KEY:-}" ]]
+fi
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=100000000
 export TORCH_EXTENSIONS_DIR="${env_dir}/torch_extensions"
