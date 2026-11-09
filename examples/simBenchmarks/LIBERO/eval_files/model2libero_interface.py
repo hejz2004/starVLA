@@ -18,7 +18,6 @@ from collections import deque
 from starVLA.dataloader.libero_action_contract import VERSION as GOAL_BINARY_VERSION, REPRESENTATION as GOAL_BINARY_REP, decode_goals, goal_to_native_delta
 from typing import Optional, Sequence
 
-import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
@@ -202,6 +201,9 @@ class ModelClient:
         ACTION_DIM_LABELS = ["x", "y", "z", "roll", "pitch", "yaw", "grasp"]
         img_strip = np.concatenate(np.array(images[::3]), axis=1)
         figure_layout = [["image"] * len(ACTION_DIM_LABELS), ACTION_DIM_LABELS]
+        # Rollout workers never plot; avoid concurrent font-cache initialization.
+        import matplotlib.pyplot as plt
+
         plt.rcParams.update({"font.size": 12})
         fig, axs = plt.subplot_mosaic(figure_layout)
         fig.set_size_inches([45, 10])
