@@ -44,8 +44,13 @@ def main():
     if any(output.iterdir()):
         raise FileExistsError('Use a new empty output directory')
     reference = json.loads(Path(args.history_manifest).read_text())
-    if reference.get('contract') != 'libero-umi-aligned-actuator-aperture-v1':
+    history_contract = reference.get('contract')
+    if history_contract not in ('libero-umi-aligned-actuator-aperture-v1',
+                                'libero-original-command-history-v1'):
         raise ValueError('Unknown controller-history provenance')
+    if history_contract == 'libero-original-command-history-v1':
+        if reference.get('status') != 'complete' or reference.get('episodes') != len(reference['records']):
+            raise ValueError('Original-command recovery is incomplete')
     rows, pose_samples = [], []
     max_rotation = max_position = max_roundtrip = 0.
     total_frames = total_windows = 0
@@ -61,12 +66,16 @@ def main():
             original = archive['goals'].copy()
             recorded_native = archive['native_actions'].copy()
             indices = archive['retained_indices'].copy()
+            initial_goal = (archive['initial_goal_quaternion'].copy()
+                            if 'initial_goal_quaternion' in archive else original[0, 3:7])
+        if original.shape != (len(state), 8) or indices.shape != (len(state),) or np.any(np.diff(indices) <= 0):
+            raise ValueError(f'Invalid source controller-history receipt: {receipt}')
         expected_native = action.copy()
         expected_native[:, 6] = 1 - 2 * action[:, 6]
         np.testing.assert_allclose(expected_native, recorded_native, atol=5e-6, rtol=0)
         # Only seed the orientation already held before the first retained row;
         # no future reference goal is used to generate a target.
-        goals = reconstruct_goals(state, action, initial_goal_quaternion=original[0, 3:7])
+        goals = reconstruct_goals(state, action, initial_goal_quaternion=initial_goal)
         position_error = float(np.max(np.abs(goals[:, :3] - original[:, :3])))
         rotation_error = float(np.max(np.linalg.norm(quaternion_to_rotvec(
             multiply(goals[:, 3:7], conjugate(original[:, 3:7]))), axis=1)))
@@ -78,7 +87,7 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(target, goals=goals, anchor_position=state[:, :3], anchor_quaternion=anchors,
             source_actions=action.astype(np.float32), source_frame_indices=indices,
-            initial_orientation_goal=original[0, 3:7])
+            initial_orientation_goal=initial_goal)
         windows = len(state) - 16 + 1
         if windows <= 0:
             raise ValueError('Episode has no complete H16 window')
@@ -92,6 +101,8 @@ def main():
             position_reconstruction_error_m=position_error, rotation_reconstruction_error_rad=rotation_error))
         total_frames += len(state)
         total_windows += windows
+        if len(rows) % 100 == 0:
+            print(json.dumps(dict(episodes=len(rows), frames=total_frames, windows=total_windows)), flush=True)
     pose = np.concatenate(pose_samples)
     low, high = np.quantile(pose, [.01, .99], axis=0)
     # Constant or nearly constant pose components still have an invertible map.
@@ -115,6 +126,7 @@ def main():
     manifest = dict(contract=VERSION, horizon=16, episodes=len(rows), frames=total_frames, windows=total_windows,
         source_data_root=str(data.resolve()), records=rows, max_position_reconstruction_error_m=max_position,
         max_rotation_reconstruction_error_rad=max_rotation, max_normalization_roundtrip_abs=max_roundtrip,
+        history_contract=history_contract,
         history_manifest_sha256=sha(args.history_manifest), builder_sha256=sha(__file__))
     publish(output / 'manifest.json', manifest)
     publish(output / 'READY.json', dict(contract=VERSION, status='complete', episodes=len(rows), frames=total_frames,

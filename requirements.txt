@@ -24,6 +24,7 @@ deepspeed==0.16.9
 qwen-vl-utils
 omegaconf
 numpy==1.26.4
+h5py==3.12.1  # Native RoboTwin HDF5 trajectories
 wandb
 rich
 diffusers

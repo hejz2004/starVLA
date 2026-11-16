@@ -170,7 +170,13 @@ class Qwen_PI(baseframework):
             num_dit_layers=num_vl_layers,
         )
 
-        self.action_model: LayerwiseFlowmatchingActionHead = get_action_model(config=self.config)
+        action_seed = self.config.get("experiment", {}).get("action_head_seed", None)
+        if action_seed is None:
+            self.action_model: LayerwiseFlowmatchingActionHead = get_action_model(config=self.config)
+        else:
+            with torch.random.fork_rng(devices=[]):
+                torch.random.default_generator.manual_seed(int(action_seed))
+                self.action_model = get_action_model(config=self.config)
 
         # `action_horizon` is the single source of truth for chunk length.
         # Legacy aliases (`future_action_window_size`, `past_action_window_size`)
@@ -335,7 +341,7 @@ class Qwen_PI(baseframework):
                 vl_embs_list, state, encoder_attention_mask=backbone_attention_mask
             )  # (B, chunk_len, action_dim)
 
-        normalized_actions = pred_actions.detach().cpu().numpy()
+        normalized_actions = pred_actions.detach().float().cpu().numpy()
         return {"normalized_actions": normalized_actions}
 
     @torch.inference_mode()
@@ -402,7 +408,7 @@ class Qwen_PI(baseframework):
                 **kwargs,
             )
 
-        normalized_actions = pred_actions.detach().cpu().numpy()
+        normalized_actions = pred_actions.detach().float().cpu().numpy()
         return {"normalized_actions": normalized_actions}
 
 

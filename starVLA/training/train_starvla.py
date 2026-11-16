@@ -97,6 +97,15 @@ def setup_directories(cfg) -> Path:
     output_dir = Path(cfg.output_dir)
     indexed = cfg.datasets.vla_data.dataset_py == "umi_indexed"
     previous = output_dir / "config.full.yaml"
+    if cfg.datasets.vla_data.dataset_py == "droid_indexed" and previous.exists():
+        if not cfg.trainer.get("is_resume", False):
+            raise FileExistsError(f"Run already exists: {output_dir}; use a new run_id or resume explicitly")
+        saved = OmegaConf.load(previous)
+        current_data = getattr(cfg.datasets.vla_data, "_cfg", cfg.datasets.vla_data)
+        if (OmegaConf.to_container(saved.datasets.vla_data, resolve=True) != OmegaConf.to_container(current_data, resolve=True)
+                or int(saved.seed) != int(cfg.seed)
+                or int(saved.trainer.gradient_accumulation_steps) != int(cfg.trainer.gradient_accumulation_steps)):
+            raise ValueError("DROID resume data/seed/batch semantics changed; use a new run")
     if indexed and previous.exists():
         if not cfg.trainer.get("is_resume", False):
             raise FileExistsError(f"Run already exists: {output_dir}; use a new run_id or resume explicitly")
@@ -292,7 +301,10 @@ class VLATrainer(TrainerUtils):
     def _init_swanlab(self):
         """Initialize SwanLab on rank zero; keep distributed startup synchronized."""
         self._swanlab_enabled = False
+        required = bool(self.config.get("swanlab_required", False))
         if os.environ.get("SWANLAB_MODE") == "disabled":
+            if required:
+                raise ValueError("This run requires SwanLab; SWANLAB_MODE cannot be disabled")
             self.accelerator.wait_for_everyone()
             return
         if self.accelerator.is_main_process:
@@ -309,8 +321,17 @@ class VLATrainer(TrainerUtils):
                 )
                 self._swanlab_enabled = True
             except Exception as exc:
-                logger.warning(f"SwanLab init failed; continuing without SwanLab: {exc}")
+                if required:
+                    logger.error(f"Required SwanLab initialization failed: {type(exc).__name__}")
+                else:
+                    logger.warning(f"SwanLab init failed; continuing without SwanLab: {exc}")
                 self._swanlab_enabled = False
+        if required:
+            ready = torch.tensor(int(self._swanlab_enabled), device=self.accelerator.device)
+            if dist.is_initialized():
+                dist.broadcast(ready, src=0)
+            if not ready.item():
+                raise RuntimeError("Required SwanLab initialization failed on rank zero")
         # Rendezvous after rank-0 SwanLab init. Otherwise a slow or failing init on
         # rank 0 lets the other ranks reach the first collective alone and
         # eventually hit an NCCL watchdog timeout.
@@ -334,7 +355,7 @@ class VLATrainer(TrainerUtils):
 
         # 2. Save config.yaml — accessed-only snapshot (will be updated at checkpoints)
         if isinstance(self.config, AccessTrackedConfig):
-            if self.config.datasets.vla_data.dataset_py == "umi_indexed":
+            if self.config.datasets.vla_data.dataset_py in ("umi_indexed", "droid_indexed"):
                 # Preserve every data rule and resolved stage for reproducibility.
                 OmegaConf.save(self.config.unwrap(), output_dir / "config.yaml", resolve=True)
             else:
@@ -476,7 +497,7 @@ class VLATrainer(TrainerUtils):
             if isinstance(self.config, AccessTrackedConfig):
                 logger.info("📊 Saving accessed configuration...")
                 output_dir = Path(self.config.output_dir)
-                if self.config.datasets.vla_data.dataset_py == "umi_indexed":
+                if self.config.datasets.vla_data.dataset_py in ("umi_indexed", "droid_indexed"):
                     # Preserve every data rule and resolved stage for reproducibility.
                     OmegaConf.save(self.config.unwrap(), output_dir / "config.yaml", resolve=True)
                 else:
@@ -554,11 +575,21 @@ class VLATrainer(TrainerUtils):
             if self.umi_stage_data is not None:
                 metrics["epoch"] = round(self.completed_steps / self.config.datasets.vla_data.stage_total_updates, 6)
                 metrics["data/stage_update"] = self.umi_stage_data.stage_updates
+            if bool(self.config.trainer.get("write_metrics_jsonl", False)):
+                if torch.cuda.is_available():
+                    metrics["memory_peak_allocated_gib"] = torch.cuda.max_memory_allocated() / 2**30
+                    metrics["memory_peak_reserved_gib"] = torch.cuda.max_memory_reserved() / 2**30
+                with (Path(self.config.output_dir) / "steps.jsonl").open("a") as handle:
+                    handle.write(json.dumps({"step": self.completed_steps, "time": time.time(),
+                                             "global_batch": self._calculate_total_batch_size(),
+                                             **metrics}, allow_nan=False) + "\n")
             if getattr(self, "_swanlab_enabled", False):
                 try:
                     wandb.log(metrics, step=self.completed_steps)
                 except Exception as exc:
                     self._swanlab_enabled = False
+                    if bool(self.config.get("swanlab_required", False)):
+                        raise RuntimeError("Required SwanLab metric upload failed") from exc
                     logger.warning(f"SwanLab log failed; disabling SwanLab: {exc}")
             logger.info(f"Step {self.completed_steps}, Loss: {metrics})")
 
@@ -606,6 +637,9 @@ class VLATrainer(TrainerUtils):
 
     def train(self):
         """Execute training loop."""
+        # from_pretrained() leaves the VLM in eval mode. Restore training on
+        # every submodule so dropout and gradient checkpointing are active.
+        self.model.train()
         self._log_training_config()
         self._create_data_iterators()
         progress_bar = tqdm(

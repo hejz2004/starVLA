@@ -268,6 +268,18 @@ class PolicyNormProcessor:
 
         # UMI indexed checkpoints carry their complete fixed transform.
         selected = norm_stats.get(unnorm_key, {})
+        if selected.get("meta", {}).get("dataset_type") == "robotwin_hdf5":
+            from starVLA.dataloader.robotwin_hdf5 import RobotwinNormalizer, contract
+            if any(selected['meta'].get(k) != v for k, v in contract().items()):
+                raise ValueError('Incompatible RoboTwin relative EEF checkpoint contract')
+            self._robotwin_normalizer = RobotwinNormalizer(selected)
+            self._robotwin_meta = selected['meta']
+            self._action_representation = 'current_eef_relative'
+            self._gripper_width_threshold = None
+            self._action_keys, self._state_keys = ['action.umi16'], ['state.umi16']
+            self._action_key_dims, self._state_key_dims = {'action.umi16': 16}, {'state.umi16': 16}
+            self._transform = None
+            return
         if (selected.get("meta", {}).get("dataset_type") == "umi_indexed"
                 and selected.get("action", {}).get("normalization") == "mean_std"):
             self._umi_mean_std = selected
@@ -382,6 +394,8 @@ class PolicyNormProcessor:
     # ------------------------------------------------------------------
     @property
     def action_contract(self):
+        if hasattr(self, '_robotwin_normalizer'):
+            return dict(self._robotwin_meta, state_normalization=self._robotwin_normalizer.statistics['state'])
         if hasattr(self, "_goal_binary_normalizer"):
             from starVLA.dataloader.libero_action_contract import VERSION, LAYOUT, OSC_SCALE
             return dict(version=VERSION, layout=LAYOUT, gripper="0=closed,1=open", gripper_threshold=.5,
@@ -443,6 +457,8 @@ class PolicyNormProcessor:
         )
         if hasattr(self, "_goal_binary_normalizer"):
             return self._goal_binary_normalizer.denormalize_action(normalized_actions)
+        if hasattr(self, '_robotwin_normalizer'):
+            return self._robotwin_normalizer.inverse(normalized_actions)
         if hasattr(self, "_umi_mean_std"):
             from starVLA.dataloader.umi_wyt import inverse_exported_actions
             return inverse_exported_actions(normalized_actions, self._umi_mean_std["action"])

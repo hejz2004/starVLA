@@ -1,0 +1,76 @@
+# Native clean50 HDF5 -> current-frame anchored UMI EEF targets t+1...t+16.
+run_id: qwenpi_robotwin_clean_relative_eef
+run_root_dir: results/Checkpoints
+seed: 42
+wandb_entity: hejz26-tsinghua-university
+wandb_project: qwenpi-vla
+swanlab_project: qwenpi-robotwin
+swanlab_workspace: hejiazhen
+swanlab_required: true
+is_debug: false
+version_id: '0.21'
+framework:
+  name: QwenPI
+  qwenvl:
+    base_vlm: /hdfs/share-data-1/users/hjz/Workspace/pretrained/Qwen3-VL-2B-Instruct
+    load_weights: true
+    attn_implementation: sdpa
+    vl_hidden_dim: 2048
+    cross_view_attention:
+      enabled: true
+      start_layer: 16
+      num_register_tokens: 4
+  action_model:
+    action_dim: 16
+    state_dim: 16
+    use_state: true
+    action_horizon: 16
+    repeated_diffusion_steps: 1
+    decoder_input_norm: layer_norm
+    diffusion_model_cfg:
+      cross_condition_norm: layer_norm
+datasets:
+  vla_data:
+    dataset_py: robotwin_hdf5
+    data_mix: robotwin_clean50_relative_eef
+    data_root_dir: /hdfs/share-data-1/datasets/huggingface/TianxingChen/RoboTwin2.0
+    assets_path: /hdfs/share-data-1/datasets/huggingface/TianxingChen/RoboTwin2.0/training_assets/umi_relative_eef_v1.json
+    action_pose_repr: current_eef_relative
+    include_state: true
+    image_size: [224, 224]
+    per_device_batch_size: 128
+    num_workers: 4
+    max_open_files: 8
+    prefetch_factor: 2
+trainer:
+  pretrained_checkpoint: null
+  is_resume: false
+  save_full_state: true
+  # 48M window presentations: aggregate Pi0 fine-tuning exposure for 50 tasks.
+  # Validated on 4 GPUs x 128; the profiling launcher rescales steps with batch.
+  max_train_steps: 93750
+  num_warmup_steps: 4688
+  save_interval: 5000
+  keep_last_checkpoints: 3
+  eval_interval: 10000000
+  learning_rate:
+    base: 3.0e-05
+    qwen_vl_interface: 1.0e-05
+    action_model: 1.0e-04
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-06
+  freeze_modules: ''
+  loss_scale:
+    vla: 1.0
+  max_grad_norm: 1.0
+  gradient_clipping: 1.0
+  weight_decay: 0.0
+  logging_frequency: 10
+  gradient_accumulation_steps: 1
+  gradient_checkpointing: true
+  optimizer:
+    name: AdamW
+    betas: [0.9, 0.95]
+    eps: 1.0e-08
+    weight_decay: 1.0e-08

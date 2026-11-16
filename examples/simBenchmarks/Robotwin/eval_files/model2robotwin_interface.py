@@ -67,6 +67,8 @@ class ModelClient:
         self.raw_actions = None
 
         server_meta = self.client.get_server_metadata()
+        if server_meta.get('action_contract', {}).get('dataset_type') == 'robotwin_hdf5':
+            raise ValueError('This checkpoint uses relative EEF actions; select model2robotwin_eef_interface')
         self.action_chunk_size = server_meta["action_chunk_size"]
         print(
             f"*** policy_setup: {policy_setup}, unnorm_key: {unnorm_key}, "

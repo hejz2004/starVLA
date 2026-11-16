@@ -9,12 +9,12 @@ import sys
 import tempfile
 import time
 import traceback
-import urllib.request
 import numpy as np
 from PIL import Image
 from libero.libero import get_libero_path
 from libero.libero.envs.bddl_utils import get_problem_info
 from plus_protocol import ROOT, atomic_json, suite_directory
+from queue_rpc import QueueRPC
 from video_artifacts import save_rollout_video as single_thread_video, video_filename
 sys.path.insert(0,str(ROOT))
 # Public render helpers used by the real Plus noise preflight.
@@ -86,12 +86,7 @@ def main():
         import cv2
         cv2.setNumThreads(1)
     except ImportError: pass
-    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    def rpc(path,payload):
-        payload=dict(payload,worker=a.worker_id)
-        req=urllib.request.Request(a.queue_url+path,data=json.dumps(payload).encode(),
-            headers={'Content-Type':'application/json','Authorization':os.environ['PLUS_QUEUE_TOKEN']})
-        with opener.open(req,timeout=30) as r:return json.load(r)
+    rpc=QueueRPC(a.queue_url,a.worker_id,os.environ['PLUS_QUEUE_TOKEN'])
     progress=Path(a.output_dir)/'workers'/a.worker_id/'progress.json'
     current={}
     standard._save_rollout_video=lambda path,frames: single_thread_video(

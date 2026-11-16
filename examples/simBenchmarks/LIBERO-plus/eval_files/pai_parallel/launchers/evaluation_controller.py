@@ -3,7 +3,6 @@
 from __future__ import annotations
 import argparse
 import fcntl
-from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import json
 import logging
 import os
@@ -19,6 +18,7 @@ import time
 from plus_protocol import (ROOT,SUITE_SIZES,SCHEMA,VERSION,REPRESENTATION,VIDEO_LAYOUT,
     WorkQueue,atomic_json,cpu_plan,digest,file_hash,load_results,make_jobs,make_protocol,
     read_result,summarize)
+from queue_rpc import ResultCoordinator,make_queue_server
 BUNDLE=Path(__file__).resolve().parents[1]
 
 
@@ -37,6 +37,8 @@ def parser():
     p.add_argument('--base-port',type=int,default=12883);p.add_argument('--seed',type=int,default=7)
     p.add_argument('--server-start-timeout',type=float,default=900)
     p.add_argument('--worker-stall-timeout',type=float,default=900)
+    p.add_argument('--max-worker-restarts',type=int,default=3)
+    p.add_argument('--max-infrastructure-attempts',type=int,default=3)
     p.add_argument('--resume',action='store_true');p.add_argument('--no-video',action='store_true')
     p.add_argument('--force-zero-gate',action='store_true')
     p.add_argument('--dry-run',action='store_true')
@@ -94,11 +96,20 @@ def prepare_resources(a,output):
     return sim
 
 
+def write_progress(output,jobs,coordinator,started,status='running',error=None):
+    stable_rows,stable_queue=coordinator.snapshot()
+    state=summarize(output,jobs,stable_rows,coordinator.queue,started,status,error,
+                    queue_snapshot=stable_queue)
+    atomic_json(output/'queue_state.json',stable_queue)
+    return state
+
+
 def run(a):
     devices=a.devices.split(',')
     if not all(x.isdigit() for x in devices) or len(set(devices))!=len(devices):raise ValueError('Distinct numeric devices required')
     if not 1<=a.base_port<=65536-len(devices):raise ValueError('Invalid policy port range')
     if a.max_per_category<0:raise ValueError('Invalid variant count')
+    if a.max_worker_restarts<0 or a.max_infrastructure_attempts<1:raise ValueError('Invalid infrastructure retry limit')
     for name in ['policy_python','simulation_python']:
         value=shutil.which(getattr(a,name))
         if not value:raise ValueError('Interpreter unavailable: '+name)
@@ -133,14 +144,13 @@ def run(a):
         rows=load_results(output,jobs,pdigest,not a.no_video)
     except BaseException:
         lock.close();raise
-    queue=WorkQueue(jobs,rows,max_attempts=1)
+    queue=WorkQueue(jobs,rows,max_attempts=a.max_infrastructure_attempts)
+    coordinator=ResultCoordinator(queue,rows,lambda job:read_result(output,job,pdigest,not a.no_video))
     started=time.monotonic();children=[];logs=[];servers=[];workers={};http=None
     handler=logging.FileHandler(output/'bootstrap.log');handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
     logging.basicConfig(level=logging.INFO,handlers=[handler,logging.StreamHandler(sys.stdout)],force=True)
     def summary(status='running',error=None):
-        with queue.lock:
-            s=summarize(output,jobs,rows,queue,started,status,error)
-            atomic_json(output/'queue_state.json',queue.snapshot())
+        s=write_progress(output,jobs,coordinator,started,status,error)
         logging.info('Progress %s/%s successes=%s active=%s pending=%s',s['completed'],s['expected'],s['successes'],len(s['queue']['in_flight']),s['queue']['pending'])
         return s
     try:
@@ -153,37 +163,7 @@ def run(a):
         count=subprocess.check_output([a.policy_python,'-c','import torch;print(torch.cuda.device_count())'],text=True).strip()
         if int(count)<=max(map(int,devices)):raise ValueError('Requested PPU device is unavailable')
         token=secrets.token_hex(24);valid_workers={f'd{d}_w{w:02d}' for d in devices for w in range(a.workers_per_device)}
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self,*args):pass
-            def do_POST(self):
-                try:
-                    if self.headers.get('Authorization')!=token:raise ValueError('Wrong queue token')
-                    n=int(self.headers.get('Content-Length','0'))
-                    if not 0<n<=1000000:raise ValueError('Invalid request size')
-                    body=json.loads(self.rfile.read(n));worker=body['worker']
-                    if worker not in valid_workers:raise ValueError('Unknown worker')
-                    with queue.lock:
-                        if self.path=='/claim':answer=queue.claim(worker,body.get('last_suite'))
-                        elif self.path=='/complete':
-                            key=body['key']
-                            if key not in queue.jobs:raise ValueError('Unknown result')
-                            if key not in queue.done:
-                                if queue.active.get(worker)!=key:raise ValueError('Wrong result owner')
-                                row=read_result(output,queue.jobs[key],pdigest,not a.no_video)
-                                if row is None:raise ValueError('Incomplete episode artifacts')
-                                rows[key]=row;queue.finish(worker,key)
-                            answer={'ok':True}
-                        elif self.path=='/error':
-                            if queue.active.get(worker)!=body['key']:raise ValueError('Wrong failed job owner')
-                            queue.fail(worker,body['error']);answer={'ok':True}
-                        else:raise ValueError('Unknown operation')
-                    data=json.dumps(answer).encode();self.send_response(200);self.end_headers();self.wfile.write(data)
-                except Exception as exc:
-                    self.send_response(400);self.end_headers();self.wfile.write(str(exc).encode())
-        class QueueServer(ThreadingHTTPServer):
-            request_queue_size=256
-            daemon_threads=True
-        http=QueueServer(('127.0.0.1',0),Handler)
+        http=make_queue_server(('127.0.0.1',0),coordinator,token,valid_workers)
         threading.Thread(target=http.serve_forever,daemon=True).start()
         url='http://127.0.0.1:'+str(http.server_address[1])
         reservations=[]
@@ -248,15 +228,15 @@ def run(a):
                 code=process.poll()
                 if code is None:continue
                 del workers[worker]
-                with queue.lock:
-                    key=queue.active.get(worker)
-                    if key:
-                        # A process can die after committing files but before its acknowledgment.
-                        row=read_result(output,queue.jobs[key],pdigest,not a.no_video)
-                        if row is not None:rows[key]=row;queue.finish(worker,key)
-                        else:queue.fail(worker,'worker exited or stalled')
-                if code or stalled:
-                    raise RuntimeError('Worker failed: '+worker+'; see its log and use --resume after fixing the error')
+                recovered=coordinator.recover_worker(worker,'worker exited or stalled')
+                if code or stalled or recovered['requeued']:
+                    if queue.snapshot()['failed']:raise RuntimeError('Infrastructure retry limit reached: '+worker)
+                    if item['restarts']>=a.max_worker_restarts:raise RuntimeError('Worker restart limit reached: '+worker)
+                    logging.warning('Recovering worker %s exit=%s stalled=%s result=%s',worker,code,stalled,recovered)
+                    history=output/'workers'/worker/'recovery.jsonl'
+                    with history.open('a') as handle:
+                        handle.write(json.dumps(dict(time=time.time(),exit_code=code,stalled=stalled,**recovered))+'\n')
+                    spawn(item['group'],item['index'],item['restarts']+1)
             if queue.snapshot()['failed']:raise RuntimeError('Episode error; inspect errors/ and resume after fixing it')
             if time.monotonic()-last>=10:
                 summary();last=time.monotonic()

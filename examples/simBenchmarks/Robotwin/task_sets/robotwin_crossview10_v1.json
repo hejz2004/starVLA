@@ -1,0 +1,297 @@
+{
+  "name": "robotwin_crossview10_v1",
+  "created_at": "2026-11-15T05:47:24.595269+00:00",
+  "status": "selected_not_launched",
+  "purpose": "Difficult and complementary-view candidate subset; necessity of cross-view attention remains an experimental hypothesis.",
+  "data_root": "/hdfs/share-data-1/datasets/huggingface/TianxingChen/RoboTwin2.0",
+  "data_variant": "aloha-agilex_clean_50",
+  "source_assets_path": "/hdfs/share-data-1/datasets/huggingface/TianxingChen/RoboTwin2.0/training_assets/umi_relative_eef_v1.json",
+  "source_assets_fingerprint": "147b5d8337020af873b748172e30506d7751cdb6e7693d74d1b0bc6fd7590679",
+  "upstream_code_commit": "ea8b21121ebb3cd201ff5b3fe361944ac94eda3f",
+  "version_caveat": "Current upstream task definitions were audited; original HDF5 collection code commit is not recorded here and is not asserted identical.",
+  "task_names": [
+    "hanging_mug",
+    "scan_object",
+    "put_object_cabinet",
+    "handover_block",
+    "put_bottles_dustbin",
+    "stack_bowls_three",
+    "stack_blocks_three",
+    "place_can_basket",
+    "place_dual_shoes",
+    "lift_pot"
+  ],
+  "tasks": [
+    {
+      "task": "hanging_mug",
+      "name_zh": "挂杯",
+      "group": "core",
+      "rationale_inference_zh": "换手重抓后对齐杯柄与挂架；结合全局位置与局部接近方向。",
+      "success_predicate_caveat_zh": "成功判据检查功能点 XY 距离、最低高度和右夹爪张开，并非直接检查杯柄拓扑套接。",
+      "episodes": 50,
+      "frames": 16939,
+      "windows": 16139,
+      "mean_frames": 338.78,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/hanging_mug.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/hanging_mug.py",
+      "source_sha256": "8793ed6be6a80b18a10690767a1910c3c49a7a9e4887ecbdd48a191ca3e03034"
+    },
+    {
+      "task": "scan_object",
+      "name_zh": "双臂扫描",
+      "group": "core",
+      "rationale_inference_zh": "一手持扫描器、一手持物体，需要对齐两个运动物体的相对方向与距离。",
+      "success_predicate_caveat_zh": "成功判据检查扫描方向投影残差、正向距离小于 7cm 和双夹爪闭合；不是真正识别条码。",
+      "episodes": 50,
+      "frames": 8513,
+      "windows": 7713,
+      "mean_frames": 170.26,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/scan_object.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/scan_object.py",
+      "source_sha256": "860dfe2cc86d180096089bc87502c7904f7ce2efb64fb32620c1720ca0178c2b"
+    },
+    {
+      "task": "put_object_cabinet",
+      "name_zh": "拉抽屉并放入物体",
+      "group": "core",
+      "rationale_inference_zh": "一臂打开抽屉，另一臂将物体放入；抽屉边缘、柜体和手臂会遮挡局部目标。",
+      "success_predicate_caveat_zh": "成功判据主要检查物体相对目标位置、高度及操作臂夹爪张开，未单独验证全过程协作。",
+      "episodes": 50,
+      "frames": 13510,
+      "windows": 12710,
+      "mean_frames": 270.2,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/put_object_cabinet.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/put_object_cabinet.py",
+      "source_sha256": "ea3ffdb9fc1fef3b349beb874d2305f2217dfffa22a282845a93edff69423417"
+    },
+    {
+      "task": "handover_block",
+      "name_zh": "交接方块后放垫子",
+      "group": "core",
+      "rationale_inference_zh": "交接阶段需对齐接收夹爪与另一臂持有物体，再完成目标放置。",
+      "success_predicate_caveat_zh": "官方成功判据只检查最终方块落点和夹爪状态；若研究交接过程，应另记交接事件，保留官方主指标。",
+      "episodes": 50,
+      "frames": 14134,
+      "windows": 13334,
+      "mean_frames": 282.68,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/handover_block.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/handover_block.py",
+      "source_sha256": "5439712296d7e143d41f8e78b4ab86cd4fad7fb98f40f5f5abb067a462d17650"
+    },
+    {
+      "task": "put_bottles_dustbin",
+      "name_zh": "多瓶入垃圾桶",
+      "group": "core",
+      "rationale_inference_zh": "重复抓取、多阶段操作，右侧瓶子专家轨迹含右到左交接，再投放左侧垃圾桶。",
+      "success_predicate_caveat_zh": "不是所有初始布局都必须交接；成功判据检查所有瓶子的最终位置，不强制交接。",
+      "episodes": 50,
+      "frames": 31281,
+      "windows": 30481,
+      "mean_frames": 625.62,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/put_bottles_dustbin.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/put_bottles_dustbin.py",
+      "source_sha256": "1c03a4b227daa7d285fa366944f1f75773e32dc6a7b73ab693217a13fcd42795"
+    },
+    {
+      "task": "stack_bowls_three",
+      "name_zh": "叠三个碗",
+      "group": "extended",
+      "rationale_inference_zh": "连续对齐碗口，曲面与相互遮挡增加接近深度判断难度。",
+      "success_predicate_caveat_zh": "多视角价值尚未量化；判据检查 XY 对齐、排序后的高度上界及夹爪张开，不能描述成严格嵌套验证。",
+      "episodes": 50,
+      "frames": 23600,
+      "windows": 22800,
+      "mean_frames": 472.0,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/stack_bowls_three.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/stack_bowls_three.py",
+      "source_sha256": "95848e9c2987e64fef2cfd928128d7a19967ba600c57dc7a6b7f1c9ea5b358e6"
+    },
+    {
+      "task": "stack_blocks_three",
+      "name_zh": "叠三层方块",
+      "group": "extended",
+      "rationale_inference_zh": "连续精确放置，叠高后需兼顾水平位置、高度和前序放置误差。",
+      "success_predicate_caveat_zh": "判据检查相邻块目标偏移：XY 各 2.5cm，Z 1.2cm；双臂使用取决于物体布局。",
+      "episodes": 50,
+      "frames": 23669,
+      "windows": 22869,
+      "mean_frames": 473.38,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/stack_blocks_three.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/stack_blocks_three.py",
+      "source_sha256": "b19f1f1c5a3a2c7c7312a4e1b2e577ccd269ebb0c444c287fecbc16ff5b47fb9"
+    },
+    {
+      "task": "place_can_basket",
+      "name_zh": "放罐子后提篮",
+      "group": "extended",
+      "rationale_inference_zh": "先对齐罐子和篮口，再换另一臂提篮；跨阶段维护罐子与篮子的空间关系。",
+      "success_predicate_caveat_zh": "成功需要罐子和篮子离桌、接触关系及篮子姿态等，不只是把罐子放到篮子附近。",
+      "episodes": 50,
+      "frames": 12668,
+      "windows": 11868,
+      "mean_frames": 253.36,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/place_can_basket.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/place_can_basket.py",
+      "source_sha256": "9f24e5ac98146babe93c68cb46baaf1d7bf21e38dbfc7c0b29e7020ae764e7f0"
+    },
+    {
+      "task": "place_dual_shoes",
+      "name_zh": "双鞋定向入盒",
+      "group": "extended",
+      "rationale_inference_zh": "双侧局部抓取加共同盒内的相对布局与鞋尖方向，兼有大物体遮挡。",
+      "success_predicate_caveat_zh": "两臂可分阶段放置，不应宣称必须全程同步；判据检查两鞋位置、四元数、高度和双夹爪张开。",
+      "episodes": 50,
+      "frames": 11560,
+      "windows": 10760,
+      "mean_frames": 231.2,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/place_dual_shoes.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/place_dual_shoes.py",
+      "source_sha256": "f35c4a133e1de567b274cbd15f158f585eb05e32aeb05be88839d249d0d7ab9e"
+    },
+    {
+      "task": "lift_pot",
+      "name_zh": "双臂抬锅",
+      "group": "coordination_control",
+      "rationale_inference_zh": "两腕各自定位锅柄，头部提供整锅姿态；两臂需保持同一刚体的协调运动。",
+      "success_predicate_caveat_zh": "轨迹较短，作为协作机制对照保留，并非长程最难任务；判据包含双 TCP 到把手距离各小于 3cm 和锅姿态。",
+      "episodes": 50,
+      "frames": 5604,
+      "windows": 4804,
+      "mean_frames": 112.08,
+      "official_task_url": "https://robotwin-platform.github.io/doc/tasks/lift_pot.html",
+      "source_url": "https://github.com/RoboTwin-Platform/RoboTwin/blob/ea8b21121ebb3cd201ff5b3fe361944ac94eda3f/envs/lift_pot.py",
+      "source_sha256": "347e06f3f9f82b1bc35882671bbbdea50b6e3c77fff0f7fb4449b024875402eb"
+    }
+  ],
+  "summary": {
+    "tasks": 10,
+    "episodes": 500,
+    "frames": 161478,
+    "windows": 153478,
+    "all_50_task_windows": 512287,
+    "window_fraction": 0.299593782391511
+  },
+  "cameras": [
+    "head_camera",
+    "left_camera",
+    "right_camera"
+  ],
+  "action_contract": {
+    "version": "robotwin-native-umi-relative-eef-v1",
+    "action_pose_repr": "current_eef_relative",
+    "coordinate_frame": "each_hand_current_eef",
+    "reference_frame": "current_observation_t_for_all_targets",
+    "future_offsets": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "translation": "R_t_transpose @ (p_future - p_t)",
+    "rotation": "conjugate(unit(q_t)) Hamilton_product unit(q_future)",
+    "quaternion_order": "xyzw",
+    "quaternion_unit_projection": "action_geometry_only; state_unchanged",
+    "quaternion_sign": "preserve_source_lift; no_per_target_hemisphere_flip",
+    "minimum_quaternion_norm_exclusive": 1e-08,
+    "gripper": "absolute_future_command_0_closed_1_open; not metres",
+    "field_order": [
+      "robot1.dx",
+      "robot1.dy",
+      "robot1.dz",
+      "robot1.dqx",
+      "robot1.dqy",
+      "robot1.dqz",
+      "robot1.dqw",
+      "robot1.gripper",
+      "robot2.dx",
+      "robot2.dy",
+      "robot2.dz",
+      "robot2.dqx",
+      "robot2.dqy",
+      "robot2.dqz",
+      "robot2.dqw",
+      "robot2.gripper"
+    ],
+    "calculation_dtype": "float64",
+    "output_dtype": "float32",
+    "dataset_type": "robotwin_hdf5",
+    "state_representation": "absolute_xyz_xyzw_gripper",
+    "source_quaternion_order": "wxyz",
+    "hand_order": [
+      "left",
+      "right"
+    ],
+    "pose_reference": "RoboTwin get_arm_pose EE frame; no additional TCP offset",
+    "language_split": "seen",
+    "camera_order": [
+      "head_camera",
+      "left_camera",
+      "right_camera"
+    ],
+    "temporal_sampling": "native consecutive saved observations; no fixed-Hz claim",
+    "tail_policy": "drop incomplete 16-future windows; no padding"
+  },
+  "visual_audit": {
+    "episodes_per_task": 1,
+    "episode_id": 0,
+    "frame_fractions": [
+      0.25,
+      0.55,
+      0.8
+    ],
+    "total_frames_per_camera": 30,
+    "total_images": 90,
+    "scope": "Qualitative spot check only; not a visibility census or measured multi-view benefit.",
+    "previews": [
+      "/hdfs/share-data-1/users/hjz/Workspace/analysis/robotwin-crossview10-20261115/preview0.png",
+      "/hdfs/share-data-1/users/hjz/Workspace/analysis/robotwin-crossview10-20261115/preview1.png"
+    ]
+  },
+  "evaluation_recommendation": {
+    "train": "clean only",
+    "eval": [
+      "held-out clean seeds",
+      "held-out randomized seeds"
+    ],
+    "main_metric": "Official task success, per task and unweighted mean over 10 tasks.",
+    "comparison": "Same three cameras, pretrained initialization, register-token count, optimizer and training budget; compare cross-view attention disabled vs enabled. Head-only is a useful separate ablation.",
+    "additional_metrics": [
+      "handover phase success",
+      "occlusion-related failure taxonomy",
+      "per-task success interval"
+    ],
+    "normalization": "Recompute training-only normalization for the selected subset before launching; do not treat this selection manifest as a ready-made dataloader assets file.",
+    "budget_note": "Same epochs with window sampling uses about 30% of original windows; keeping the old max_train_steps would not reduce compute. Task-balanced sampling is a separate recipe change."
+  },
+  "exclusions": [
+    {
+      "task": "handover_mic",
+      "reason": "Mechanism overlaps with handover_block; block task also includes placement."
+    },
+    {
+      "task": "open_microwave",
+      "reason": "Long articulated manipulation, but weaker direct two-arm coupling; not prioritized solely for being difficult."
+    },
+    {
+      "task": "dump_bin_bigbin",
+      "reason": "Useful alternative for pouring; current success checks mainly heights, so not prioritized over direct shared-object coordination."
+    },
+    {
+      "task": "pick_dual_bottles",
+      "reason": "Two mostly independent grasps give weaker evidence for cross-view interaction."
+    }
+  ],
+  "training_launched": false
+}

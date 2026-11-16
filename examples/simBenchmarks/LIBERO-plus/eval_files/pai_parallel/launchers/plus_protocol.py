@@ -72,6 +72,7 @@ def make_protocol(args,jobs):
         raise ValueError('Checkpoint must use the latest stateless anchored-goal binary contract')
     # Hash execution and action-adapter files, not tests or unrelated training tools.
     critical=[Path(__file__),Path(__file__).with_name('evaluation_controller.py'),Path(__file__).with_name('eval_worker.py'),
+        Path(__file__).with_name('queue_rpc.py'),
         Path(__file__).parents[1]/'policy_entry.py',Path(__file__).parents[1]/'preflight.py',
         Path(__file__).with_name('video_artifacts.py')]
     critical += [ROOT/'examples/simBenchmarks/LIBERO/eval_files'/name for name in
@@ -154,11 +155,11 @@ class WorkQueue:
             if key in self.done: return
             if self.active.get(worker)!=key: raise ValueError('Result does not belong to this worker')
             del self.active[worker];self.done.add(key)
-    def fail(self,worker,error):
+    def fail(self,worker,error,*,retry=True):
         with self.lock:
             key=self.active.pop(worker,None)
             if key is None:return
-            if self.attempts[key]>=self.max_attempts:self.failed[key]=str(error)
+            if not retry or self.attempts[key]>=self.max_attempts:self.failed[key]=str(error)
             else:self.pending[self.jobs[key]['suite']].append(key)
     def snapshot(self):
         with self.lock:
@@ -166,7 +167,7 @@ class WorkQueue:
                         completed=len(self.done),failed=dict(self.failed),attempts=dict(self.attempts))
 
 
-def summarize(output,jobs,rows,queue,started,status='running',error=None):
+def summarize(output,jobs,rows,queue,started,status='running',error=None,*,queue_snapshot=None):
     values=list(rows.values()); suites=[]
     for suite in sorted({j['suite'] for j in jobs}):
         selected=[r for r in values if r['suite']==suite];expected=[j for j in jobs if j['suite']==suite]
@@ -182,7 +183,8 @@ def summarize(output,jobs,rows,queue,started,status='running',error=None):
     count=sum(r['success'] for r in values)
     summary=dict(schema=SCHEMA,status=status,expected=len(jobs),completed=len(values),successes=count,
         success_rate=count/len(values) if values else None,suites=suites,error=error,
-        elapsed_seconds_this_launch=time.monotonic()-started,queue=queue.snapshot(),
+        elapsed_seconds_this_launch=time.monotonic()-started,
+        queue=queue.snapshot() if queue_snapshot is None else queue_snapshot,
         completed_steps=sum(r['steps'] for r in values))
     atomic_json(Path(output)/'summary.json',summary)
     return summary

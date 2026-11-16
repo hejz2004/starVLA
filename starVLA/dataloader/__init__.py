@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader
 import numpy as np
 import torch.distributed as dist
 from pathlib import Path
-from starVLA.dataloader.vlm_datasets import make_vlm_dataloader
 
 logger = get_logger(__name__)
 
@@ -35,7 +34,10 @@ def save_dataset_statistics(dataset_statistics, run_dir):
 
 def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here only is get dataset, we need mv dataloader to here
 
-    if dataset_py == "lerobot_datasets":
+    if dataset_py == "robotwin_hdf5":
+        from starVLA.dataloader.robotwin_hdf5 import make_robotwin_dataloader
+        return make_robotwin_dataloader(cfg)
+    elif dataset_py == "lerobot_datasets":
         from starVLA.dataloader.lerobot_datasets import get_vla_dataset, collate_fn
         vla_dataset_cfg = cfg.datasets.vla_data
 
@@ -65,6 +67,7 @@ def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here on
             vla_dataset.save_dataset_statistics(output_dir / "dataset_statistics.json")
         return vla_train_dataloader
     elif dataset_py == "vlm_datasets":
+        from starVLA.dataloader.vlm_datasets import make_vlm_dataloader
         vlm_data_module = make_vlm_dataloader(cfg)
         vlm_train_dataloader = vlm_data_module["train_dataloader"]
         
@@ -80,6 +83,9 @@ def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here on
     elif dataset_py == "umi_indexed":
         from starVLA.dataloader.umi_wyt import make_wyt_umi_dataloader
         return make_wyt_umi_dataloader(cfg)
+    elif dataset_py == "droid_indexed":
+        from starVLA.dataloader.droid_indexed import make_droid_dataloader
+        return make_droid_dataloader(cfg)
     elif dataset_py == "umi_lerobot":
         from starVLA.dataloader.umi_lerobot import make_umi_lerobot_dataloader
 
