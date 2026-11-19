@@ -1,0 +1,121 @@
+run_id: dualstream-libero-15k
+run_root_dir: results
+seed: 42
+wandb_entity: hejz26-tsinghua-university
+wandb_project: qwenpi-vla
+is_debug: false
+version_id: '0.21'
+framework:
+  name: DualStreamPI
+  qwenvl:
+    base_vlm: /hdfs/share-data-1/users/hjz/Workspace/pretrained/Qwen3-VL-2B-Instruct
+    load_weights: true
+    attn_implementation: sdpa
+    vl_hidden_dim: 2048
+    cross_view_attention: null
+    dual_stream:
+      enabled: true
+      interaction_indexes:
+      - 5
+      - 11
+      - 17
+      - 23
+      num_shared_tokens: 32
+      num_heads: 16
+      intermediate_size: 4096
+      gate_hidden_size: 256
+      gate_init_value: 0.01
+      gate_output_weight_std: 0.001
+      attention_dropout: 0.0
+  action_model:
+    action_dim: 16
+    state_dim: 16
+    use_state: false
+    action_horizon: 16
+    repeated_diffusion_steps: 1
+    decoder_input_norm: layer_norm
+    diffusion_model_cfg:
+      cross_condition_norm: layer_norm
+datasets:
+  vlm_data:
+    dataset_py: vlm_datasets
+    dataformat: llava_json
+    dataset_use: sharegpt4v_coco
+    eval_dataset: sharegpt4v_coco
+    data_flatten: false
+    base_interval: 2
+    max_pixels: 307200
+    min_pixels: 784
+    model_max_length: 2048
+    model_type: qwen2.5vl
+    per_device_batch_size: 4
+  vla_data:
+    dataset_py: lerobot_datasets
+    data_root_dir: /hdfs/share-data-1/users/hjz/Workspace/datasets/LEROBOT_LIBERO_DATA
+    data_mix: libero_all_anchored_osc_goal_binary
+    drop_incomplete_action_chunks: true
+    action_type: libero-anchored-osc-goal-binary-v1
+    action_horizon: 16
+    controller_goal_root: /hdfs/share-data-1/users/hjz/Workspace/datasets/LIBERO_OSC_GOAL_BINARY_V1
+    include_state: false
+    action_mode: abs
+    state_action_dtype: float32
+    normalization_statistics: /hdfs/share-data-1/users/hjz/Workspace/datasets/LIBERO_OSC_GOAL_BINARY_V1/statistics.json
+    sequential_step_sampling: false
+    CoT_prompt: '{instruction}'
+    per_device_batch_size: 64
+    load_all_data_for_training: true
+    video_backend: torchvision_av
+    image_size:
+    - 224
+    - 224
+    num_workers: 2
+    prefetch_factor: 2
+    pin_memory: false
+trainer:
+  pretrained_checkpoint: null
+  is_resume: false
+  max_train_steps: 15000
+  num_warmup_steps: 750
+  save_interval: 15000
+  keep_last_checkpoints: 2
+  eval_interval: 10000000
+  learning_rate:
+    base: 3.0e-05
+    qwen_vl_interface: 1.0e-05
+    action_model: 0.0001
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-06
+  freeze_modules: ''
+  loss_scale:
+    vla: 1.0
+    vlm: 0.1
+  max_grad_norm: 1.0
+  weight_decay: 0.0
+  logging_frequency: 5
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+  gradient_checkpointing: true
+  optimizer:
+    name: AdamW
+    betas:
+    - 0.9
+    - 0.95
+    eps: 1.0e-08
+    weight_decay: 1.0e-08
+  write_metrics_jsonl: true
+swanlab_project: qwenpi-droid-libero-transfer
+swanlab_workspace: hejiazhen
+swanlab_required: true
+experiment:
+  action_head_seed: 43
+  comparison: Future LIBERO recipe:4GPU BS64 global256;15000 optimizer updates
+  base_model_revision: 89644892e4d85e24eaac8bacfd4f463576704203
+  phase: formal
+  variant: dualstream-bottleneck32
+  world_size: 4
+  sample_budget: 3840000
+  reference_global_batch: 256
+  architecture: dualstream
+  description: DualStream bottleneck:32 shared tokens;gated fusion after vision layers5/11/17/23

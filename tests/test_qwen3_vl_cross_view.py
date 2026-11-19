@@ -324,7 +324,7 @@ class ConfigAndFrameworkTests(unittest.TestCase):
             self.assertEqual(c.framework.qwenvl.cross_view_attention.start_layer,16)
             self.assertEqual(c.framework.qwenvl.cross_view_attention.num_register_tokens, 4)
             self.assertIsNone(c.trainer.get('pretrained_checkpoint'))
-        self.assertFalse(Path('starVLA/model/framework/VLM4A/DualStreamQwenPI.py').exists())
+        self.assertTrue(Path('starVLA/model/framework/VLM4A/DualStreamQwenPI.py').exists())
 
     def test_framework_rejects_legacy_weights_even_with_nonstrict_loading(self):
         from starVLA.model.framework.VLM4A.QwenPI import Qwen_PI

@@ -1,0 +1,93 @@
+run_id: dualstream-droid-smoke
+run_root_dir: results
+seed: 42
+is_debug: false
+framework:
+  name: DualStreamPI
+  qwenvl:
+    base_vlm: /hdfs/share-data-1/users/hjz/Workspace/pretrained/Qwen3-VL-2B-Instruct
+    load_weights: true
+    attn_implementation: sdpa
+    vl_hidden_dim: 2048
+    cross_view_attention: null
+    dual_stream:
+      enabled: true
+      interaction_indexes:
+      - 5
+      - 11
+      - 17
+      - 23
+      num_shared_tokens: 32
+      num_heads: 16
+      intermediate_size: 4096
+      gate_hidden_size: 256
+      gate_init_value: 0.01
+      gate_output_weight_std: 0.001
+      attention_dropout: 0.0
+  action_model:
+    action_dim: 16
+    state_dim: 16
+    use_state: false
+    action_horizon: 16
+    repeated_diffusion_steps: 1
+    decoder_input_norm: layer_norm
+    diffusion_model_cfg:
+      cross_condition_norm: layer_norm
+datasets:
+  vla_data:
+    dataset_py: droid_indexed
+    index_dir: /hdfs/share-data-1/users/hjz/Workspace/datasets/DROID_EEF/index-h16-s3-20261114T160250Z
+    split: train
+    anchor_stride_frames: 3
+    per_device_batch_size: 16
+    image_size:
+    - 224
+    - 224
+    num_workers: 4
+    prefetch_factor: 2
+    video_cache_items: 6
+    lowdim_cache_items: 2
+    shuffle_block_size: 64
+    shuffle_interleave_blocks: 8
+    seed: 42
+    drop_last: true
+    return_metadata: true
+trainer:
+  pretrained_checkpoint: null
+  is_resume: false
+  max_train_steps: 32
+  num_warmup_steps: 4
+  save_interval: 32
+  keep_last_checkpoints: 1
+  eval_interval: 10000000
+  learning_rate:
+    base: 3.0e-05
+    qwen_vl_interface: 1.0e-05
+    action_model: 0.0001
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-06
+  freeze_modules: ''
+  max_grad_norm: 1.0
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+  gradient_checkpointing: true
+  logging_frequency: 1
+  write_metrics_jsonl: true
+  save_full_state: true
+  optimizer:
+    name: AdamW
+    betas:
+    - 0.9
+    - 0.95
+    eps: 1.0e-08
+    weight_decay: 0.0
+swanlab_project: qwenpi-droid-pretrain
+swanlab_workspace: hejiazhen
+swanlab_required: true
+experiment:
+  variant: dualstream-bottleneck32
+  action_head_seed: 43
+  phase: startup_validation
+  architecture: dualstream
+  description: DualStream bottleneck:32 shared tokens;gated fusion after vision layers5/11/17/23

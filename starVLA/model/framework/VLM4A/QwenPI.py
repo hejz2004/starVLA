@@ -124,7 +124,11 @@ class Qwen_PI(baseframework):
     Focus: Predict future continuous actions conditioned on images + instruction.
     """
 
-    #
+    default_config = QwenPIDefaultConfig
+
+    def _build_vlm(self):
+        return get_vlm_model(config=self.config)
+
     def __init__(
         self,
         config: Optional[dict] = None,
@@ -140,8 +144,8 @@ class Qwen_PI(baseframework):
 
         super().__init__()
         # Merge framework defaults with YAML config (YAML wins on conflicts)
-        self.config = merge_framework_config(QwenPIDefaultConfig, config)
-        self.qwen_vl_interface = get_vlm_model(config=self.config)
+        self.config = merge_framework_config(self.default_config, config)
+        self.qwen_vl_interface = self._build_vlm()
 
         if bool(self.config.get("trainer", {}).get("gradient_checkpointing", False)) or bool(
             self.config.framework.qwenvl.get("gradient_checkpointing", False)

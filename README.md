@@ -1,3 +1,5 @@
+> **DualStreamPI research branch:** see [architecture, configurations and validation](docs/dualstream_bottleneck.md).
+
 <p align="center">
 <img src="assets/logo.svg" alt="StarVLA Logo" width="10%">
 </p>
