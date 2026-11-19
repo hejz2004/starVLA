@@ -12,7 +12,9 @@ import sys
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from examples.droid.tools.prepare_native_control import replace_once, rewrite_command, snapshot, write_json
+from examples.droid.tools.prepare_native_control import (
+    configure_swanlab_launcher, replace_once, rewrite_command, snapshot, write_json,
+)
 
 
 def configurable_entry(source):
@@ -105,7 +107,7 @@ def prepare(reference, native_plan_path, destination, stamp):
             framework_identical_except_cross_view=True, seed_identical=True, steps=15000, global_batch=256))
         (train / "configs/train.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
         (train / "launcher/train_entry.py").write_text(entry)
-        (train / "launcher/job.py").write_text(job)
+        (train / "launcher/job.py").write_text(configure_swanlab_launcher(job, train / "launcher"))
         shutil.copy2(old_train / "launcher/platform_status.py", train / "launcher/platform_status.py")
         (train / "launcher/platform-command.txt").write_text((old_train / "launcher/platform-command.txt").read_text().replace(str(old_train), str(train)))
         short_label = label.removeprefix("droid_").replace("_", "-")

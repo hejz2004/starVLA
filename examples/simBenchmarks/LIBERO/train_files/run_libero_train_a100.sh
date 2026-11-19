@@ -18,17 +18,15 @@ exec > >(tee -a "${output_dir}/launch/node${node_rank}.log") 2>&1
 echo "$(date -Iseconds) A100 launch: node=${node_rank}/${num_nodes}, master=${MASTER_ADDR}:${master_port}"
 
 # Reuse the runtime used by successful A100 QwenPI job dlc5psc23v46kcqk.
-# This extracts a prepared NAS archive into each pod; it runs no pip/apt downloads.
+# This extracts a prepared NAS archive into each pod; the SDK is updated below.
 unset PYTHONPATH PYTHONHOME
 export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 export USE_TF=0 USE_FLAX=0
 source /mnt/workspace/Native_Policy/user/wyt/a100/wc/ops/dlc_qwenpi/use_nas_runtime.sh
 export PATH="/opt/qwenpi/train/bin:${PATH}"
 export PYTHONPATH="${repo_root}"
-# Install only the experiment logger from prepared Python 3.10 wheels.
-python -m pip install --no-index \
-    --find-links "${repo_root}/playground/Artifacts/swanlab_0.10.3_py310_wheels" \
-    -r "${script_dir}/requirements-swanlab.txt"
+# Upgrade and verify the experiment logger before starting distributed workers.
+python "${repo_root}/scripts/ensure_swanlab.py"
 env_dir="/tmp/starvla-a100-${RUN_ID}"
 mkdir -p "${env_dir}"
 python -m pip freeze > "${output_dir}/launch/node${node_rank}.packages.txt"

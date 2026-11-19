@@ -42,4 +42,4 @@ tdigest==0.5.2.2
 # causal_conv1d==1.5.0.post8
 # transformers==5.3.0
 # VLA training experiment tracking
-swanlab==0.10.3
+swanlab==0.10.5

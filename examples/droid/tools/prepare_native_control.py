@@ -30,6 +30,19 @@ def snapshot(source, destination):
     shutil.copytree(source, destination, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git"))
 
 
+def configure_swanlab_launcher(job, launcher):
+    """Freeze the SDK bootstrap alongside a newly prepared job, not old runs."""
+    repo = Path(__file__).resolve().parents[3]
+    shutil.copy2(repo / "scripts/ensure_swanlab.py", launcher / "ensure_swanlab.py")
+    wheel = repo.parent / "artifacts/swanlab/0.10.5/swanlab-0.10.5-py3-none-any.whl"
+    if wheel.is_file():
+        shutil.copy2(wheel, launcher / wheel.name)
+    bootstrap = "    subprocess.run([sys.executable, str(ROOT/'launcher/ensure_swanlab.py')], check=True)\n"
+    if bootstrap not in job:
+        job = replace_once(job, "    import torch\n", bootstrap + "    import torch\n")
+    return job
+
+
 def pretrain_entry(source, reference_initialization):
     text = source.read_text()
     text = replace_once(text, "Train DA3-style QwenPI with audited pretrained weights and per-view registers.",
@@ -132,7 +145,7 @@ def prepare(reference_pretrain, reference_transfer, root, stamp, posttrain_steps
     job = replace_once((reference_pretrain / "launcher/job.py").read_text(), "for batch in (128,64,32):", "for batch in (128,):")
     job = replace_once(job, '"""Eight-GPU DROID epoch: try microbatch 128, fall back through 64 and 32 only on CUDA OOM."""',
                        '"""Native DROID control: eight GPUs, fixed batch128 to match MV2 exactly."""')
-    (pretrain / "launcher/job.py").write_text(job)
+    (pretrain / "launcher/job.py").write_text(configure_swanlab_launcher(job, pretrain / "launcher"))
     shutil.copy2(reference_pretrain / "launcher/platform_status.py", pretrain / "launcher/platform_status.py")
     (pretrain / "launcher/platform-command.txt").write_text((reference_pretrain / "launcher/platform-command.txt").read_text().replace(str(reference_pretrain), str(pretrain)))
     command = rewrite_command(reference_pretrain / "platform/submit-command.json", reference_pretrain, pretrain,
@@ -210,7 +223,8 @@ def prepare(reference_pretrain, reference_transfer, root, stamp, posttrain_steps
             posttrain_steps=posttrain_steps, per_device_batch=posttrain_batch, global_batch=global_batch,
             sample_budget=posttrain_steps * global_batch))
         shutil.copy2(transfer / "launcher/posttrain_entry.py", train / "launcher/train_entry.py")
-        shutil.copy2(transfer / "launcher/posttrain_job.py", train / "launcher/job.py")
+        job = (transfer / "launcher/posttrain_job.py").read_text()
+        (train / "launcher/job.py").write_text(configure_swanlab_launcher(job, train / "launcher"))
         shutil.copy2(old_train / "launcher/platform_status.py", train / "launcher/platform_status.py")
         (train / "launcher/platform-command.txt").write_text((old_train / "launcher/platform-command.txt").read_text().replace(str(old_train), str(train)))
         command = rewrite_command(old_train / "platform/submit-command.json", old_train, train,

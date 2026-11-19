@@ -1,4 +1,4 @@
-swanlab==0.10.3
+swanlab==0.10.5
 pydantic==2.10.6
 pydantic-settings==2.8.1
 protobuf==6.33.6
