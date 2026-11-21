@@ -8,7 +8,9 @@ Utility class for creating a centralized/standardized logger (built on Rich) and
 
 import logging
 import logging.config
+import multiprocessing
 import os
+import sys
 from contextlib import nullcontext
 from logging import LoggerAdapter
 from typing import Any, Callable, ClassVar, Dict, MutableMapping, Tuple, Union
@@ -51,8 +53,8 @@ class DistributedOverwatch:
         """Initializer for an Overwatch object that wraps logging & `accelerate.PartialState`."""
         from accelerate import PartialState
 
-        # Note that PartialState is always safe to initialize regardless of `accelerate launch` or `torchrun`
-        #   =>> However, might be worth actually figuring out if we need the `accelerate` dependency at all!
+        # Only training processes may initialize PartialState. Spawned data
+        # workers inherit rank environment variables but are not training ranks.
         self.logger, self.distributed_state = ContextAdapter(logging.getLogger(name), extra={}), PartialState()
 
         # Logger Delegation
@@ -146,4 +148,8 @@ class PureOverwatch:
 
 
 def initialize_overwatch(name: str) -> Union[DistributedOverwatch, PureOverwatch]:
+    if multiprocessing.current_process().name != "MainProcess":
+        dist = sys.modules.get("torch.distributed")
+        if dist is None or not dist.is_initialized():
+            return PureOverwatch(name)
     return DistributedOverwatch(name) if int(os.environ.get("WORLD_SIZE", -1)) != -1 else PureOverwatch(name)

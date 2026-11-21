@@ -12,12 +12,12 @@ framework:
     cross_view_attention: null
     dual_stream:
       enabled: true
-      interaction_indexes:
+      interaction_indexes:  # Fuse after these zero-based ViT blocks; independent of DeepStack taps.
       - 5
       - 11
       - 17
       - 23
-      num_shared_tokens: 32
+      num_shared_tokens: 32  # Positive integer; shared latent length per scene.
       num_heads: 16
       intermediate_size: 4096
       gate_hidden_size: 256

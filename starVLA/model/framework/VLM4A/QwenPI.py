@@ -197,15 +197,20 @@ class Qwen_PI(baseframework):
         return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def _encode_vl_hidden_states(
-        self, batch_images: List, instructions: List[str]
+        self, batch_images: List, instructions: List[str], qwen_inputs=None
     ) -> tuple:
         """Run QwenVL and return (layer-wise hidden states, attention_mask) for the Action DiT."""
-        qwen_inputs = self.qwen_vl_interface.build_qwenvl_inputs(
-            images=batch_images, instructions=instructions
-        )
+        if qwen_inputs is None:
+            qwen_inputs = self.qwen_vl_interface.build_qwenvl_inputs(
+                images=batch_images, instructions=instructions
+            )
+        else:
+            device = next(self.qwen_vl_interface.parameters()).device
+            qwen_inputs = {k: v.to(device, non_blocking=True) for k, v in qwen_inputs.items()}
         attention_mask = qwen_inputs.get("attention_mask", None)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            qwenvl_outputs = self.qwen_vl_interface(
+            feature_forward = getattr(self.qwen_vl_interface, "forward_action_features", self.qwen_vl_interface)
+            qwenvl_outputs = feature_forward(
                 **qwen_inputs,
                 output_attentions=False,
                 output_hidden_states=True,
@@ -230,29 +235,34 @@ class Qwen_PI(baseframework):
             dict:
                 action_loss (torch.Tensor): Scalar diffusion noise prediction loss.
         """
-        batch_images = [example["image"] for example in examples]  #  [B, [PLT]]
-        instructions = [example["lang"] for example in examples]  # [B, str]
-        actions = [example["action"] for example in examples]  # label [B, len, 7]
-        action_masks = [example.get("action_mask") for example in examples]
+        if isinstance(examples, dict):
+            actions = examples["actions"]
+            action_masks = list(examples["action_mask"]) if "action_mask" in examples else [None] * len(actions)
+            state = examples.get("state")
+            vl_embs_list, backbone_attention_mask = self._encode_vl_hidden_states(
+                None, None, qwen_inputs=examples["vlm_inputs"]
+            )
+        else:
+            batch_images = [example["image"] for example in examples]
+            instructions = [example["lang"] for example in examples]
+            actions = [example["action"] for example in examples]
+            action_masks = [example.get("action_mask") for example in examples]
+            state = [example["state"] for example in examples] if "state" in examples[0] else None
+            vl_embs_list, backbone_attention_mask = self._encode_vl_hidden_states(batch_images, instructions)
         has_action_mask = any(mask is not None for mask in action_masks)
         if has_action_mask:
             for action, mask in zip(actions, action_masks):
                 if mask is not None and np.shape(mask) != np.shape(action):
-                    raise ValueError(
-                        f"action_mask shape {np.shape(mask)} does not match action shape {np.shape(action)}"
-                    )
+                    raise ValueError(f"action_mask shape {np.shape(mask)} does not match action shape {np.shape(action)}")
 
-        state = [example["state"] for example in examples] if "state" in examples[0] else None  # [B, 1, state_dim]
-
-        # Step 1: encode through QwenVL
-        vl_embs_list, backbone_attention_mask = self._encode_vl_hidden_states(batch_images, instructions)
         base_hidden = vl_embs_list[-1]
 
         # Step 4: Action Expert Forward and Loss
         with torch.autocast("cuda", dtype=torch.float32):
             # Label alignment: take the last chunk_len segment
-            actions = torch.tensor(
-                np.array(actions), device=base_hidden.device, dtype=base_hidden.dtype
+            actions = torch.as_tensor(
+                actions if isinstance(actions, torch.Tensor) else np.array(actions),
+                device=base_hidden.device, dtype=base_hidden.dtype
             )  # [B, T_full, action_dim]
             actions_target = actions[:, -self.action_horizon :, :]  # (B, action_horizon, action_dim)
 
@@ -285,7 +295,8 @@ class Qwen_PI(baseframework):
 
             state_repeated = None
             if state is not None:
-                state = torch.tensor(np.array(state), device=base_hidden.device, dtype=base_hidden.dtype)
+                state = torch.as_tensor(state if isinstance(state, torch.Tensor) else np.array(state),
+                                        device=base_hidden.device, dtype=base_hidden.dtype)
                 state_repeated = state.repeat(repeated_diffusion_steps, 1, 1)
 
             action_loss = self.action_model(
@@ -316,26 +327,33 @@ class Qwen_PI(baseframework):
             dict:
                 normalized_actions (np.ndarray): Shape [B, T, action_dim], diffusion-sampled normalized actions.
         """
-        if type(examples) is not list:
-            examples = [examples]
+        if isinstance(examples, dict) and "vlm_inputs" in examples:
+            state = examples.get("state")
+            vl_embs_list, backbone_attention_mask = self._encode_vl_hidden_states(
+                None, None, qwen_inputs=examples["vlm_inputs"]
+            )
+        else:
+            if type(examples) is not list:
+                examples = [examples]
 
-        batch_images = [to_pil_preserve(example["image"]) for example in examples]  #  [B, [PLT]]
-        instructions = [example["lang"] for example in examples]  # [B, str]
+            batch_images = [to_pil_preserve(example["image"]) for example in examples]  #  [B, [PLT]]
+            instructions = [example["lang"] for example in examples]  # [B, str]
 
-        state = [example["state"] for example in examples] if "state" in examples[0] else None  # [B, 1, state_dim]
+            state = [example["state"] for example in examples] if "state" in examples[0] else None  # [B, 1, state_dim]
 
-        train_obs_image_size = getattr(self.config.datasets.vla_data, "obs_image_size", None)
-        if train_obs_image_size:
-            batch_images = resize_images(batch_images, target_size=train_obs_image_size)
+            train_obs_image_size = getattr(self.config.datasets.vla_data, "obs_image_size", None)
+            if train_obs_image_size:
+                batch_images = resize_images(batch_images, target_size=train_obs_image_size)
 
-        # Step 1: encode through QwenVL
-        vl_embs_list, backbone_attention_mask = self._encode_vl_hidden_states(batch_images, instructions)
+            # Step 1: encode through QwenVL
+            vl_embs_list, backbone_attention_mask = self._encode_vl_hidden_states(batch_images, instructions)
         base_hidden = vl_embs_list[-1]
         if backbone_attention_mask is not None:
             backbone_attention_mask = backbone_attention_mask.to(dtype=torch.bool)
 
         state = (
-            torch.from_numpy(np.array(state)).to(base_hidden.device, dtype=base_hidden.dtype)
+            torch.as_tensor(state if isinstance(state, torch.Tensor) else np.array(state),
+                            device=base_hidden.device, dtype=base_hidden.dtype)
             if state is not None
             else None
         )

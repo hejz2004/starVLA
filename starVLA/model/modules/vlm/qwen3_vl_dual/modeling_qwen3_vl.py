@@ -233,7 +233,9 @@ class Qwen3VLDualStreamInteractionStage(nn.Module):
             dropout=self.attention_dropout if self.training else 0.0,
             is_causal=False,
         )
-        out = out.transpose(1, 2).reshape(batch_size, len_q, self.hidden_size)
+        # Transformers attention interfaces return [B, L, H, D], unlike
+        # torch's raw SDPA kernel ([B, H, L, D]). Only merge the head axes.
+        out = out.reshape(batch_size, len_q, self.hidden_size)
         return out.squeeze(0) if single_scene else out
 
     def forward(
@@ -386,6 +388,25 @@ class Qwen3VLVisionAttention(nn.Module):
                 is_causal=False,
                 **kwargs,
             )
+        elif self.config._attn_implementation == "sdpa" and getattr(self.config, "batch_vision_attention", False):
+            # Equal-length images share one kernel launch, without allowing
+            # attention across image/scene boundaries. Mixed sizes form buckets.
+            offsets = cu_seqlens.tolist()
+            lengths = [b - a for a, b in zip(offsets, offsets[1:])]
+            # Residual/norm inputs may be FP32 under autocast while QKV and
+            # attention outputs are BF16. Match the actual attention dtype.
+            flat_output = query_states.new_zeros((seq_length, self.num_heads, self.head_dim))
+            for length in sorted(set(lengths)):
+                rows = [i for i, n in enumerate(lengths) if n == length]
+                indices = torch.cat([torch.arange(offsets[i], offsets[i+1], device=hidden_states.device) for i in rows])
+                q, k, v = [x[0].transpose(0, 1).index_select(0, indices)
+                           .reshape(len(rows), length, self.num_heads, self.head_dim).transpose(1, 2)
+                           for x in (query_states, key_states, value_states)]
+                output, _ = attention_interface(self, q, k, v, attention_mask=None,
+                    scaling=self.scaling, dropout=0.0 if not self.training else self.attention_dropout,
+                    is_causal=False, **kwargs)
+                flat_output = flat_output.index_copy(0, indices, output.flatten(0, 1))
+            attn_output = flat_output.unsqueeze(0)
         else:
             # Other implementations: Process each chunk separately
             lengths = cu_seqlens[1:] - cu_seqlens[:-1]
@@ -796,21 +817,27 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
         dual_stream_config = dict(dual_stream_config)
         depth = int(config.depth)
         deepstack_indexes = list(config.deepstack_visual_indexes)
-        # Every DeepStack tap and the last block must own an interaction
-        # stage; the interaction positions are fixed by the spec.
-        expected_indexes = sorted(set(deepstack_indexes) | {depth - 1})
+        # Preserve the default taps, but allow fusion after any vision block.
+        # Fusion updates the backbone, independently of DeepStack readout sites.
         user_indexes = dual_stream_config.get("interaction_indexes")
-        if user_indexes is not None:
-            user_indexes = sorted(int(i) for i in user_indexes)
-            if user_indexes != expected_indexes:
-                raise ValueError(
-                    f"dual_stream.interaction_indexes {user_indexes} must equal "
-                    f"sorted(set(deepstack_visual_indexes) | {{depth-1}}) = {expected_indexes}"
-                )
-        num_shared_tokens = int(dual_stream_config.get("num_shared_tokens", 32))
-        if num_shared_tokens <= 0:
-            raise ValueError(f"num_shared_tokens must be positive, got {num_shared_tokens}")
+        if user_indexes is None:
+            user_indexes = sorted(set(deepstack_indexes) | {depth - 1})
+        if not isinstance(user_indexes, (list, tuple)) or not user_indexes:
+            raise ValueError("interaction_indexes must be a nonempty list; use enabled=false to disable fusion")
+        if any(type(i) is not int or not 0 <= i < depth for i in user_indexes):
+            raise ValueError(f"interaction_indexes must contain integer block indexes in [0, {depth - 1}]")
+        if len(set(user_indexes)) != len(user_indexes):
+            raise ValueError("interaction_indexes must not contain duplicates")
+        interaction_indexes = sorted(user_indexes)
+        num_shared_tokens = dual_stream_config.get("num_shared_tokens", 32)
+        if type(num_shared_tokens) is not int or num_shared_tokens <= 0:
+            raise ValueError(f"num_shared_tokens must be a positive integer, got {num_shared_tokens}")
         num_heads = int(dual_stream_config.get("num_heads", config.num_heads))
+
+        # Persist effective hyperparameters in exported Hugging Face configs.
+        dual_stream_config["interaction_indexes"] = interaction_indexes
+        dual_stream_config["num_shared_tokens"] = num_shared_tokens
+        config.dual_stream = dual_stream_config
 
         self.dual_stream_config = {
             "num_heads": num_heads,
@@ -820,14 +847,14 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
             "gate_output_weight_std": float(dual_stream_config.get("gate_output_weight_std", 1e-3)),
             "attention_dropout": float(dual_stream_config.get("attention_dropout", 0.0)),
         }
-        self.dual_stream_interaction_indexes = expected_indexes
+        self.dual_stream_interaction_indexes = interaction_indexes
         self.shared_init = nn.Parameter(
             torch.randn(num_shared_tokens, config.hidden_size) * config.initializer_range
         )
         self.interaction_stages = nn.ModuleDict(
             {
                 str(layer_index): Qwen3VLDualStreamInteractionStage(config, self.dual_stream_config)
-                for layer_index in expected_indexes
+                for layer_index in interaction_indexes
             }
         )
 
@@ -1009,7 +1036,6 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
             shared = self.shared_init.unsqueeze(0).expand(len(scene_patch_counts), -1, -1)
 
         deepstack_feature_lists = []
-        fused = hidden_states
         for layer_num, blk in enumerate(self.blocks):
             hidden_states = blk(
                 hidden_states,
@@ -1018,17 +1044,16 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
                 **kwargs,
             )
             if use_dual_stream and layer_num in self.dual_stream_interaction_indexes:
-                # Cross-view interaction: update the shared state from the
-                # current private features, then produce per-view fused
-                # features. Private features keep flowing through the
-                # remaining blocks unchanged (spec §4 invariants).
+                # Write cross-view fusion back into the vision residual stream.
+                # Subsequent blocks, DeepStack and the final merger all consume
+                # the same updated patch features.
                 stage = self.interaction_stages[str(layer_num)]
                 if uniform_scene_length:
                     # Standard fixed-view training path: one batched attention
                     # call, with no attention between different scenes.
                     per_scene = hidden_states.reshape(len(scene_patch_counts), scene_patch_counts[0], -1)
                     shared, fused = stage(per_scene, shared)
-                    fused = fused.reshape_as(hidden_states)
+                    hidden_states = fused.reshape_as(hidden_states)
                 else:
                     # Mixed view counts/resolutions: preserve packed image order
                     # while each scene attends only to its own patches.
@@ -1039,16 +1064,14 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
                         )
                     ]
                     shared = torch.stack([result[0] for result in results], dim=0)
-                    fused = torch.cat([result[1] for result in results], dim=0)
-            else:
-                fused = hidden_states
+                    hidden_states = torch.cat([result[1] for result in results], dim=0)
             if layer_num in self.deepstack_visual_indexes:
                 deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(layer_num)](
-                    fused
+                    hidden_states
                 )
                 deepstack_feature_lists.append(deepstack_feature)
 
-        hidden_states = self.merger(fused)
+        hidden_states = self.merger(hidden_states)
 
         return hidden_states, deepstack_feature_lists
 
@@ -1668,6 +1691,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
         video_grid_thw: Optional[torch.LongTensor] = None,
         cache_position: Optional[torch.LongTensor] = None,
         logits_to_keep: Union[int, torch.Tensor] = 0,
+        skip_lm_head: bool = False,
         **kwargs: Unpack[TransformersKwargs],
     ) -> Union[tuple, Qwen3VLCausalLMOutputWithPast]:
         r"""
@@ -1701,7 +1725,9 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
+        if skip_lm_head and labels is not None:
+            raise ValueError("skip_lm_head cannot be used with language labels")
+        logits = None if skip_lm_head else self.lm_head(hidden_states[:, slice_indices, :])
 
         loss = None
         if labels is not None:

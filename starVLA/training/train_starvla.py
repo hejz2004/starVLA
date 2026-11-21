@@ -129,6 +129,9 @@ def prepare_data(cfg, accelerator, output_dir) -> DataLoader:
     logger.info(f"Creating VLA Dataset with Mixture `{cfg.datasets.vla_data.get('data_mix', '<none>')}`")
     vla_train_dataloader = build_dataloader(cfg=cfg, dataset_py=cfg.datasets.vla_data.dataset_py)
 
+    from starVLA.dataloader.qwen_preprocess import configure_worker_preprocessing
+    vla_train_dataloader = configure_worker_preprocessing(vla_train_dataloader, cfg)
+
     accelerator.dataloader_config.dispatch_batches = False
     if dist.is_initialized():
         dist.barrier()
@@ -236,6 +239,14 @@ class VLATrainer(TrainerUtils):
             self.lr_scheduler,
             self.vla_train_dataloader,
         )
+
+        self._cuda_prefetch = bool(self.config.datasets.vla_data.get("cuda_prefetch", False))
+        if self._cuda_prefetch:
+            if not self.config.datasets.vla_data.get("worker_preprocessing", False):
+                raise ValueError("cuda_prefetch requires worker_preprocessing")
+            if self.accelerator.device.type != "cuda":
+                raise ValueError("cuda_prefetch requires CUDA")
+            self.vla_train_dataloader.device = None
 
         if self.config.datasets.vla_data.get("stages"):
             from starVLA.training.trainer_utils.umi_stage_data import UMIStageData
@@ -507,6 +518,7 @@ class VLATrainer(TrainerUtils):
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
             self._prune_old_checkpoints()
+        self._last_checkpoint_step = self.completed_steps
 
     def _prune_old_checkpoints(self):
         """Keep only the newest k checkpoints when trainer.keep_last_checkpoints > 0.
@@ -609,13 +621,19 @@ class VLATrainer(TrainerUtils):
         set_epoch = getattr(self.vla_train_dataloader, "set_epoch", None)
         if callable(set_epoch):
             set_epoch(self.vla_epoch_count)
-        self.vla_iter = iter(self.vla_train_dataloader)
+        self.vla_iter = self._prefetch_iterator(iter(self.vla_train_dataloader))
         skip = getattr(self, "_skip_batches", 0)
         for _ in range(skip):
             next(self.vla_iter)
         self._skip_batches = 0
         if skip:
             logger.info(f"Data iterator fast-forwarded past {skip} batches (strict resume)")
+
+    def _prefetch_iterator(self, iterator):
+        if getattr(self, "_cuda_prefetch", False):
+            from starVLA.training.trainer_utils.cuda_prefetch import CudaPrefetchIterator
+            return CudaPrefetchIterator(iterator, self.accelerator.device)
+        return iterator
 
     def _get_next_batch(self):
         """Get next batch (automatically handle data loop)."""
@@ -630,6 +648,7 @@ class VLATrainer(TrainerUtils):
             self.vla_iter, self.vla_epoch_count = TrainerUtils._reset_dataloader(
                 self.vla_train_dataloader, self.vla_epoch_count
             )
+            self.vla_iter = self._prefetch_iterator(self.vla_iter)
             batch_vla = next(self.vla_iter)
 
         self.batches_consumed += 1
@@ -694,7 +713,8 @@ class VLATrainer(TrainerUtils):
         if self.umi_stage_data is not None:
             return self.umi_stage_data.evaluate(_unwrap_model(self.accelerator, self.model), step_metrics or {})
         examples = self._get_next_batch()
-        actions = [example["action"] for example in examples]
+        actions = (examples["actions"].detach().float().cpu().numpy()
+                   if isinstance(examples, dict) else [example["action"] for example in examples])
         output_dict = _unwrap_model(self.accelerator, self.model).predict_action(
             examples=examples, use_ddim=True, num_ddim_steps=20
         )
@@ -772,17 +792,41 @@ class VLATrainer(TrainerUtils):
 
     def _finalize_training(self):
         """Training end processing."""
+        final_full_state = bool(getattr(self.config.trainer, "save_final_full_state", False))
+        if final_full_state:
+            if not getattr(self.config.trainer, "save_full_state", True):
+                raise ValueError("save_final_full_state requires save_full_state")
+            if getattr(self, "_last_checkpoint_step", None) != self.completed_steps:
+                self._save_checkpoint()
         if self.accelerator.is_main_process:
             save_format = getattr(self.config.trainer, "save_format", "pt")
             final_checkpoint = os.path.join(self.config.output_dir, "final_model")
             os.makedirs(final_checkpoint, exist_ok=True)
-            state_dict = _get_state_dict(self.accelerator, self.model)
-            if save_format == "safetensors":
+            if final_full_state:
+                # Export the same latest weights without duplicating model storage.
+                suffix, filename = {
+                    "pt": ("_pytorch_model.pt", "pytorch_model.pt"),
+                    "safetensors": ("_model.safetensors", "model.safetensors"),
+                }[save_format]
+                source = os.path.join(self.checkpoint_dir, f"steps_{self.completed_steps}{suffix}")
+                target = os.path.join(final_checkpoint, filename)
+                temporary = target + ".tmp"
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+                try:
+                    os.link(source, temporary)
+                except OSError as error:
+                    import errno
+                    if error.errno != errno.EXDEV:
+                        raise
+                    shutil.copyfile(source, temporary)
+                os.replace(temporary, target)
+            elif save_format == "safetensors":
                 from safetensors.torch import save_file
 
-                save_file(state_dict, os.path.join(final_checkpoint, "model.safetensors"))
+                save_file(_get_state_dict(self.accelerator, self.model), os.path.join(final_checkpoint, "model.safetensors"))
             elif save_format == "pt":
-                torch.save(state_dict, os.path.join(final_checkpoint, "pytorch_model.pt"))
+                torch.save(_get_state_dict(self.accelerator, self.model), os.path.join(final_checkpoint, "pytorch_model.pt"))
             else:
                 raise ValueError(f"Unsupported save_format `{save_format}`. Expected `pt` or `safetensors`.")
             logger.info(f"Training complete. Final model saved at {final_checkpoint}")

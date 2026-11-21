@@ -55,22 +55,24 @@ class _QWen3DualStream_VL_Interface(nn.Module):
             dual_stream:
               enabled: true
               num_shared_tokens: 32
+              interaction_indexes: [5, 11, 17, 23]
               num_heads: 16
               gate_hidden_size: 256
               gate_init_value: 0.01
               gate_output_weight_std: 0.001
 
         `interaction_indexes` default to
-        sorted(set(deepstack_visual_indexes) | {depth-1}) and are validated
-        inside the vision tower.
+        sorted(set(deepstack_visual_indexes) | {depth-1}) when omitted/null.
+        Explicit indexes select any unique zero-based blocks after which
+        fusion runs; they need not coincide with DeepStack output layers.
         """
         super().__init__()
 
         qwenvl_config = config.framework.get("qwenvl", {})
         model_id = qwenvl_config.get("base_vlm", "Qwen/Qwen3-VL-2B-Instruct")
-        # sdpa is the only backend the dual-stream stages rely on; the plain
-        # interface also falls back to sdpa (PPU environments have no FA2).
-        attn_implementation = "sdpa"
+        attn_implementation = qwenvl_config.get("attn_implementation", "sdpa")
+        if attn_implementation != "sdpa":
+            raise ValueError("DualStream supports sdpa")
 
         # Deep-convert to plain Python types: the YAML block arrives as an
         # OmegaConf DictConfig whose nested lists (e.g. interaction_indexes)
@@ -81,6 +83,7 @@ class _QWen3DualStream_VL_Interface(nn.Module):
         else:
             dual_stream_config = dict(raw_dual_stream)
         hf_config = Qwen3VLConfig.from_pretrained(model_id)
+        hf_config.vision_config.batch_vision_attention = bool(qwenvl_config.get("batch_vision_attention", False))
         if dual_stream_config.get("enabled", False):
             hf_config.vision_config.dual_stream = dual_stream_config
             logger.info(f"Dual-stream enabled with config: {dual_stream_config}")
@@ -199,6 +202,12 @@ class _QWen3DualStream_VL_Interface(nn.Module):
 
         return outputs
 
+    def forward_action_features(self, **kwargs):
+        """Hidden-state action path, shared by training and inference."""
+        kwargs["skip_lm_head"] = bool(self.config.framework.qwenvl.get("skip_unused_lm_head", True))
+        kwargs["use_cache"] = False
+        return self.forward(**kwargs)
+
     def generate(
         self,
         **kwargs,
@@ -273,7 +282,7 @@ class _QWen3DualStream_VL_Interface(nn.Module):
             labels[labels == self.processor.tokenizer.pad_token_id] = -100  ## mask out pad tokens as well
             batch_inputs["labels"] = labels
 
-        return batch_inputs.to(self.model.device)
+        return batch_inputs if kwargs.get("return_cpu", False) else batch_inputs.to(self.model.device)
 
 
 if __name__ == "__main__":

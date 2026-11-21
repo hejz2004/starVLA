@@ -1,11 +1,11 @@
 """Structural acceptance tests for the dual-stream Qwen3-VL vision tower.
 
-Covers the structural items of qwen3_vl_2b_dual_stream_design.md §12 on a
-small random-config vision tower (CPU, fp32). Images within a scene interact,
-while distinct batch samples are isolated.
+Covers the backbone-fusion variant on a small random-config vision tower
+(CPU, fp32). Images within a scene interact, while distinct batch samples
+are isolated.
 
 1. gamma=0 diagnostic restores the original model outputs
-2. private stream independence (P_i does not see other images)
+2. view independence before fusion, cross-view influence in subsequent blocks
 3. cross-view path exists (other views influence F_i through S)
 4. view permutation equivariance (S invariant, F equivariant)
 5. variable inputs (mixed resolutions / view counts / single view)
@@ -85,13 +85,13 @@ def pixels_for(grids, batch=1):
 
 
 class DualStreamVisionTest(unittest.TestCase):
-    def _build_pair(self):
+    def _build_pair(self, **dual_overrides):
         base_cfg = make_vision_config()
         orig = Qwen3VLVisionModel(base_cfg)
         orig.post_init()
 
         dual_cfg = make_vision_config()
-        dual_cfg.dual_stream = dict(DUAL_STREAM_CFG)
+        dual_cfg.dual_stream = dict(DUAL_STREAM_CFG, **dual_overrides)
         dual = Qwen3VLVisionModel(dual_cfg)
         dual.post_init()
 
@@ -142,61 +142,87 @@ class DualStreamVisionTest(unittest.TestCase):
             self.assertGreater(stage.gate_mlp.fc2.weight.abs().max().item(), 0)
             self.assertLess(stage.gate_mlp.fc2.weight.abs().max().item(), 10 * 0.001)
 
-    # ---- 2. private independence ----------------------------------------
-    def test_private_stream_independence(self):
+    # ---- 2. cross-view fusion enters subsequent backbone blocks ----------
+    def test_fusion_changes_subsequent_backbone_features_and_gradients(self):
         _, dual = self._build_pair()
         dual.eval()
-        grids = [(1, 4, 4), (1, 4, 4)]
+        # Exercise both the batched equal-length path and mixed-length path.
+        for grids, scene_counts in [
+            ([(1, 4, 4)] * 4, [2, 2]),
+            ([(1, 4, 4), (1, 2, 2), (1, 4, 2)], [2, 1]),
+        ]:
+            with self.subTest(grids=grids):
+                captured = {}
 
-        pixel_values = pixels_for(grids).requires_grad_(True)
-        grid_thw = torch.tensor(grids, dtype=torch.long)
+                def capture(key):
+                    def hook(module, args, output):
+                        captured[key] = output
+                    return hook
 
-        captured = {}
+                handles = [
+                    dual.blocks[INTERACTION[0]].register_forward_hook(capture("before")),
+                    dual.blocks[INTERACTION[0] + 1].register_forward_hook(capture("after")),
+                ]
+                try:
+                    grid_thw = torch.tensor(grids, dtype=torch.long)
+                    pixels = pixels_for(grids)
+                    n_img1 = grids[0][1] * grids[0][2]
+                    scene_end = n_img1 + grids[1][1] * grids[1][2]
+                    with torch.no_grad():
+                        dual(pixels, grid_thw=grid_thw, scene_image_counts=scene_counts)
+                        baseline = {key: value.clone() for key, value in captured.items()}
+                        changed = pixels.clone()
+                        changed[n_img1:scene_end] += 10.0
+                        dual(changed, grid_thw=grid_thw, scene_image_counts=scene_counts)
 
-        def hook(module, args, output):
-            captured["block_out"] = output.detach().clone()
+                    # Before the first interaction, views are still independent.
+                    torch.testing.assert_close(
+                        baseline["before"][:n_img1], captured["before"][:n_img1], rtol=0, atol=0
+                    )
+                    # A regular ViT block must now see the other view's information.
+                    self.assertFalse(torch.equal(
+                        baseline["after"][:n_img1], captured["after"][:n_img1]
+                    ))
+                    torch.testing.assert_close(
+                        baseline["after"][scene_end:], captured["after"][scene_end:], rtol=0, atol=0
+                    )
 
-        handle = dual.blocks[DEPTH - 1].register_forward_hook(hook)
-        baseline, _ = dual(pixel_values, grid_thw=grid_thw)
-        block_out_baseline = captured["block_out"].clone()
-        handle.remove()
-
-        n_img1 = grids[0][1] * grids[0][2]
-        perturbed = pixel_values.clone()
-        perturbed[n_img1:] += 10.0  # perturb only image 2
-
-        handle = dual.blocks[DEPTH - 1].register_forward_hook(hook)
-        dual(perturbed, grid_thw=grid_thw)
-        handle.remove()
-
-        # P of image 1 must be bitwise identical: the original blocks attend
-        # per image (cu_seqlens), so image 2 cannot leak into P_1.
-        torch.testing.assert_close(
-            block_out_baseline[:n_img1], captured["block_out"][:n_img1], rtol=0, atol=0
-        )
-
-        # And no gradient flows from the private stream of image 1 back to
-        # image 2's pixels: the blocks attend per image (cu_seqlens), so an
-        # image-1-only loss on the BLOCK OUTPUT must leave image-2 pixel
-        # gradients at exactly zero. (The fused path intentionally couples
-        # views through S — that is the cross-view test's job, not this one.)
-        grad_probe = pixel_values.detach().clone().requires_grad_(True)
-        captured = {}
-
-        def grad_hook(module, args, output):
-            captured["block_out"] = output
-
-        handle = dual.blocks[DEPTH - 1].register_forward_hook(grad_hook)
-        dual(grad_probe, grid_thw=grid_thw)
-        handle.remove()
-        captured["block_out"][:n_img1].sum().backward()
-        self.assertIsNotNone(grad_probe.grad)
-        self.assertTrue(
-            torch.all(grad_probe.grad[n_img1:] == 0),
-            "image-2 pixels must receive zero gradient from an image-1-only private loss",
-        )
+                    dual.zero_grad(set_to_none=True)
+                    probe = pixels.clone().requires_grad_(True)
+                    dual(probe, grid_thw=grid_thw, scene_image_counts=scene_counts)
+                    # No merger/DeepStack loss: gradients must travel through
+                    # the regular backbone block and the first fusion stage.
+                    captured["after"][:n_img1].square().mean().backward()
+                    self.assertTrue(torch.isfinite(probe.grad).all())
+                    self.assertGreater(probe.grad[n_img1:scene_end].abs().sum().item(), 0)
+                    self.assertTrue(torch.all(probe.grad[scene_end:] == 0))
+                    stage_grad = dual.interaction_stages[str(INTERACTION[0])].o3.weight.grad
+                    self.assertIsNotNone(stage_grad)
+                    self.assertTrue(torch.isfinite(stage_grad).all())
+                    self.assertGreater(stage_grad.abs().sum().item(), 0)
+                finally:
+                    for handle in handles:
+                        handle.remove()
 
     # ---- 3. cross-view path ---------------------------------------------
+    def test_attention_matches_explicit_per_head_reference(self):
+        _, dual = self._build_pair()
+        stage = dual.interaction_stages[str(INTERACTION[0])]
+        for batched in (False, True):
+            with self.subTest(batched=batched):
+                prefix = (2,) if batched else ()
+                q = torch.randn(*prefix, 7, HIDDEN)
+                k = torch.randn(*prefix, 11, HIDDEN)
+                v = torch.randn(*prefix, 11, HIDDEN)
+                heads = []
+                for head in range(HEADS):
+                    channels = slice(head * stage.head_dim, (head + 1) * stage.head_dim)
+                    scores = q[..., channels] @ k[..., channels].transpose(-1, -2)
+                    weights = (scores * stage.scaling).softmax(dim=-1)
+                    heads.append(weights @ v[..., channels])
+                expected = torch.cat(heads, dim=-1)
+                torch.testing.assert_close(stage._sdpa(q, k, v), expected, rtol=1e-5, atol=1e-6)
+
     def test_cross_view_path_and_gradients(self):
         _, dual = self._build_pair()
         dual.eval()
@@ -354,12 +380,61 @@ class DualStreamVisionTest(unittest.TestCase):
         self.assertTrue(((gamma > 0) & (gamma < 1)).all())
 
     def test_interaction_indexes_validation(self):
-        bad_cfg = make_vision_config()
-        bad = dict(DUAL_STREAM_CFG)
-        bad["interaction_indexes"] = [0, 2, 4]
-        bad_cfg.dual_stream = bad
-        with self.assertRaises(ValueError):
-            Qwen3VLVisionModel(bad_cfg)
+        for indexes in ([], [-1], [DEPTH], [1, 1], [1.5], [True], "1,3"):
+            with self.subTest(indexes=indexes), self.assertRaises(ValueError):
+                self._build_pair(interaction_indexes=indexes)
+        for tokens in (0, -1, 1.5, True):
+            with self.subTest(tokens=tokens), self.assertRaises(ValueError):
+                self._build_pair(num_shared_tokens=tokens)
+
+    def test_configurable_fusion_sites_and_shared_token_counts(self):
+        # None of these sites coincide with DeepStack or the last vision block.
+        # Also cover a single early interaction that must survive to the merger.
+        for indexes, tokens in (([4, 0, 2], 1), ([0], 16)):
+            with self.subTest(indexes=indexes, tokens=tokens):
+                orig, dual = self._build_pair(
+                    interaction_indexes=indexes, num_shared_tokens=tokens
+                )
+                orig.eval()
+                dual.eval()
+                self.assertEqual(dual.dual_stream_interaction_indexes, sorted(indexes))
+                self.assertEqual(list(dual.interaction_stages), [str(i) for i in sorted(indexes)])
+                self.assertEqual(tuple(dual.shared_init.shape), (tokens, HIDDEN))
+                self.assertEqual(dual.deepstack_visual_indexes, DEEPSTACK)
+                grid = torch.tensor([(1, 4, 4), (1, 2, 2)])
+                pixels = pixels_for(grid.tolist())
+                baseline, _ = orig(pixels, grid_thw=grid)
+                output, deepstack = dual(pixels, grid_thw=grid)
+                self.assertEqual(output.shape, baseline.shape)
+                self.assertEqual(len(deepstack), len(DEEPSTACK))
+                self.assertFalse(torch.equal(output, baseline))
+                output.square().mean().backward()
+                for name, param in dual.named_parameters():
+                    if name == "shared_init" or name.startswith("interaction_stages."):
+                        self.assertIsNotNone(param.grad, name)
+                        self.assertTrue(torch.isfinite(param.grad).all(), name)
+                        self.assertGreater(param.grad.abs().sum().item(), 0, name)
+                with tempfile.TemporaryDirectory() as tmp:
+                    dual.config.save_pretrained(tmp)
+                    cfg = Qwen3VLVisionConfig.from_pretrained(tmp)
+                    restored = Qwen3VLVisionModel(cfg)
+                    restored.load_state_dict(dual.state_dict(), strict=True)
+                    restored.eval()
+                    restored_output, restored_ds = restored(pixels, grid_thw=grid)
+                    torch.testing.assert_close(restored_output, output, rtol=0, atol=0)
+                    for actual, expected in zip(restored_ds, deepstack):
+                        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+    def test_default_interaction_sites(self):
+        for explicit_null in (False, True):
+            cfg = make_vision_config()
+            cfg.dual_stream = dict(DUAL_STREAM_CFG)
+            cfg.dual_stream.pop("interaction_indexes")
+            if explicit_null:
+                cfg.dual_stream["interaction_indexes"] = None
+            dual = Qwen3VLVisionModel(cfg)
+            self.assertEqual(dual.dual_stream_interaction_indexes, INTERACTION)
+            self.assertEqual(dual.config.dual_stream["interaction_indexes"], INTERACTION)
 
     # ---- 7. save / restore -------------------------------------------------
     def test_state_dict_roundtrip_and_config_serialization(self):
