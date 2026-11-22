@@ -333,6 +333,30 @@ def eager_attention_forward(
     return attn_output, attn_weights
 
 
+def _build_vision_attention_layout(cu_seqlens):
+    """Build immutable per-forward buckets, also reused by checkpoint replay.
+
+    A uniform packed sequence is already in batch order and needs no gather or
+    scatter. Mixed-length indices live only as long as this forward's graph;
+    never cache them across inputs, devices or model instances.
+    """
+    offsets = cu_seqlens.tolist()
+    lengths = [b - a for a, b in zip(offsets, offsets[1:])]
+    if not lengths or min(lengths) <= 0:
+        raise ValueError("vision attention requires nonempty positive-length images")
+    if len(set(lengths)) == 1:
+        return ((len(lengths), lengths[0], None),)
+    buckets = []
+    for length in sorted(set(lengths)):
+        rows = [i for i, n in enumerate(lengths) if n == length]
+        indices = torch.cat([
+            torch.arange(offsets[i], offsets[i + 1], device=cu_seqlens.device)
+            for i in rows
+        ])
+        buckets.append((len(rows), length, indices))
+    return tuple(buckets)
+
+
 class Qwen3VLVisionAttention(nn.Module):
     def __init__(self, config: Qwen3VLVisionConfig) -> None:
         super().__init__()
@@ -353,6 +377,7 @@ class Qwen3VLVisionAttention(nn.Module):
         cu_seqlens: torch.Tensor,
         rotary_pos_emb: Optional[torch.Tensor] = None,
         position_embeddings: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
+        attention_layout=None,
         **kwargs,
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
@@ -388,6 +413,30 @@ class Qwen3VLVisionAttention(nn.Module):
                 is_causal=False,
                 **kwargs,
             )
+        elif (self.config._attn_implementation == "sdpa"
+              and getattr(self.config, "batch_vision_attention", False)
+              and getattr(self.config, "reuse_vision_attention_layout", False)):
+            if attention_layout is None:
+                attention_layout = _build_vision_attention_layout(cu_seqlens)
+            flat_output = None
+            for count, length, indices in attention_layout:
+                tensors = [x[0].transpose(0, 1) for x in (query_states, key_states, value_states)]
+                if indices is not None:
+                    tensors = [x.index_select(0, indices) for x in tensors]
+                q, k, v = [x.reshape(count, length, self.num_heads, self.head_dim).transpose(1, 2)
+                           for x in tensors]
+                output, _ = attention_interface(
+                    self, q, k, v, attention_mask=None, scaling=self.scaling,
+                    dropout=0.0 if not self.training else self.attention_dropout,
+                    is_causal=False, **kwargs,
+                )
+                if indices is None:
+                    flat_output = output.flatten(0, 1)
+                else:
+                    if flat_output is None:
+                        flat_output = query_states.new_zeros((seq_length, self.num_heads, self.head_dim))
+                    flat_output = flat_output.index_copy(0, indices, output.flatten(0, 1))
+            attn_output = flat_output.unsqueeze(0)
         elif self.config._attn_implementation == "sdpa" and getattr(self.config, "batch_vision_attention", False):
             # Equal-length images share one kernel launch, without allowing
             # attention across image/scene boundaries. Mixed sizes form buckets.
@@ -1009,6 +1058,12 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
         )
         cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
 
+        attention_layout = None
+        if (self.config._attn_implementation == "sdpa"
+                and getattr(self.config, "batch_vision_attention", False)
+                and getattr(self.config, "reuse_vision_attention_layout", False)):
+            attention_layout = _build_vision_attention_layout(cu_seqlens)
+
         use_dual_stream = self.interaction_stages is not None
         shared = None
         scene_patch_counts = None
@@ -1041,6 +1096,7 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
                 hidden_states,
                 cu_seqlens=cu_seqlens,
                 position_embeddings=position_embeddings,
+                attention_layout=attention_layout,
                 **kwargs,
             )
             if use_dual_stream and layer_num in self.dual_stream_interaction_indexes:

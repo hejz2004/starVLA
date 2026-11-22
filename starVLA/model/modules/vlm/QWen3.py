@@ -191,7 +191,7 @@ class _QWen3_VL_Interface(nn.Module):
             labels[labels == self.processor.tokenizer.pad_token_id] = -100  ## mask out pad tokens as well
             batch_inputs["labels"] = labels
 
-        return batch_inputs.to(self.model.device)
+        return batch_inputs if kwargs.get("return_cpu", False) else batch_inputs.to(self.model.device)
 
 
 if __name__ == "__main__":

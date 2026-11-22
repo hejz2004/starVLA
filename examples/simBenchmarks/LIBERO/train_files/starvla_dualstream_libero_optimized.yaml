@@ -29,6 +29,10 @@ framework:
       attention_dropout: 0.0
     skip_unused_lm_head: true
     batch_vision_attention: true
+    reuse_vision_attention_layout: true
+    # null inherits trainer.gradient_checkpointing. false trades ~29 GiB for
+    # less vision recomputation on the measured 4x96 GiB / batch64 setup.
+    vision_gradient_checkpointing: null
   action_model:
     action_dim: 16
     state_dim: 16

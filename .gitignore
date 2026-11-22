@@ -248,6 +248,10 @@ wandb/*
 !docs/starVLA_guideline.md
 !docs/WM4A.md
 !docs/dualstream_bottleneck.md
+!docs/dualstream_communication_tuning.md
+!docs/dualstream_profile_20261122.md
+!docs/dualstream_layout_communication_20261122.md
+!docs/native_baseline_multiseed_20261122.md
 
 
 logs/*

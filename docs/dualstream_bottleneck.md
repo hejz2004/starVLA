@@ -2,6 +2,10 @@
 
 Branch: `experiment/dualstream-bottleneck`.
 
+[Native baseline two-seed training and evaluation handoff (2026-11-22)](native_baseline_multiseed_20261122.md)
+records the independent native QwenPI jobs, shared worker preprocessing/CUDA
+prefetch support, P2P settings, and automatic checkpoint evaluation.
+
 This branch builds on the current starVLA training/data implementation. The
 vision tower and processor interface originate from `803dbc3`; the framework
 inherits current QwenPI action training and inference, including independent
@@ -95,6 +99,20 @@ behavior. Full-model training/resume and vision-inference checks are described
 below; these checks do not establish trained-policy rollout success.
 
 ## Performance migration (2026-11-19)
+
+[Layout reuse, selective vision checkpointing and NCCL tuning (2026-11-22)](dualstream_layout_communication_20261122.md)
+documents the follow-up implementation and same-node four-GPU measurements.
+The optimized recipe enables per-forward vision layout reuse; selective vision
+checkpointing is optional and preserves the language/action training settings.
+
+[Actual four-GPU kernel profile (2026-11-22)](dualstream_profile_20261122.md)
+confirms FlashAttention in vision/fusion, efficient attention in language/action,
+and identifies FP32 action-head computation and remaining communication costs.
+
+Follow-up: [four-GPU communication diagnosis (2026-11-22)](dualstream_communication_tuning.md)
+reproduced the scaling slowdown on a research node and reduced step time from
+5.57s to 2.69s by enabling cross-NUMA GPU P2P in NCCL. This is separate from the
+code optimizations and two-GPU measurements below.
 
 `examples/simBenchmarks/LIBERO/train_files/starvla_dualstream_libero_optimized.yaml`
 keeps the existing LIBERO controller-goal targets, batch 64, 15000 updates and

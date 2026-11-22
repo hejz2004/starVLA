@@ -7,9 +7,10 @@ from omegaconf import OmegaConf
 
 
 class QwenProcessorCollator:
-    def __init__(self, model_path, data_config):
+    def __init__(self, model_path, data_config, framework_name="DualStreamPI"):
         self.model_path = str(model_path)
         self.data_config = dict(data_config)
+        self.framework_name = framework_name
         self._interface = None
 
     def __call__(self, examples):
@@ -21,8 +22,11 @@ class QwenProcessorCollator:
                 processor=processor,
                 config=OmegaConf.create({"datasets": {"vla_data": self.data_config}}),
             )
-        from starVLA.model.modules.vlm.QWen3DualStream import _QWen3DualStream_VL_Interface
-        inputs = _QWen3DualStream_VL_Interface.build_qwenvl_inputs(
+        if self.framework_name in ("QwenPI", "QwenFM"):
+            from starVLA.model.modules.vlm.QWen3 import _QWen3_VL_Interface as interface_class
+        else:
+            from starVLA.model.modules.vlm.QWen3DualStream import _QWen3DualStream_VL_Interface as interface_class
+        inputs = interface_class.build_qwenvl_inputs(
             self._interface, [x["image"] for x in examples], [x["lang"] for x in examples],
             return_cpu=True,
         )
@@ -45,8 +49,10 @@ class QwenProcessorCollator:
 def configure_worker_preprocessing(loader, cfg):
     if not cfg.datasets.vla_data.get("worker_preprocessing", False):
         return loader
-    if cfg.framework.name not in ("DualStreamPI", "DualStreamQwenPI", "DualStreamQwenFM"):
-        raise ValueError("worker_preprocessing currently supports DualStreamPI only")
+    if cfg.framework.name not in ("DualStreamPI", "DualStreamQwenPI", "DualStreamQwenFM", "QwenPI", "QwenFM"):
+        raise ValueError("worker_preprocessing supports QwenPI/QwenFM and DualStreamPI")
+    if cfg.framework.name in ("QwenPI", "QwenFM") and "Qwen3-VL" not in str(cfg.framework.qwenvl.base_vlm):
+        raise ValueError("QwenPI worker_preprocessing currently requires a Qwen3-VL backbone")
     if cfg.datasets.vla_data.get("stages"):
         raise ValueError("worker_preprocessing with staged UMI requires a stage-aware integration")
     if loader.num_workers < 1:
@@ -56,6 +62,6 @@ def configure_worker_preprocessing(loader, cfg):
     loader.multiprocessing_context = "spawn"
     data = cfg.datasets.vla_data
     loader.collate_fn = QwenProcessorCollator(cfg.framework.qwenvl.base_vlm,
-        {"CoT_prompt": data.CoT_prompt} if "CoT_prompt" in data else {})
+        {"CoT_prompt": data.CoT_prompt} if "CoT_prompt" in data else {}, cfg.framework.name)
     loader.pin_memory = True
     return loader

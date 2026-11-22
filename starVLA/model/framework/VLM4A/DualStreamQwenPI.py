@@ -36,6 +36,18 @@ class DualStreamQwenPIDefaultConfig(QwenPIDefaultConfig):
 class DualStreamQwen_PI(Qwen_PI):
     default_config = DualStreamQwenPIDefaultConfig
 
+    def __init__(self, config=None, **kwargs):
+        super().__init__(config=config, **kwargs)
+        # Apply after QwenPI's global setting so language checkpointing stays
+        # unchanged. None preserves the existing all-or-nothing behavior.
+        vision_checkpointing = self.config.framework.qwenvl.get("vision_gradient_checkpointing")
+        if vision_checkpointing is not None:
+            visual = self.qwen_vl_interface.model.model.visual
+            if vision_checkpointing:
+                visual.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+            else:
+                visual.gradient_checkpointing_disable()
+
     def _build_vlm(self):
         cross_view = self.config.framework.qwenvl.get("cross_view_attention")
         if cross_view and cross_view.get("enabled", False):

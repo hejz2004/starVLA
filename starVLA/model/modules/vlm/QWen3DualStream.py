@@ -84,6 +84,9 @@ class _QWen3DualStream_VL_Interface(nn.Module):
             dual_stream_config = dict(raw_dual_stream)
         hf_config = Qwen3VLConfig.from_pretrained(model_id)
         hf_config.vision_config.batch_vision_attention = bool(qwenvl_config.get("batch_vision_attention", False))
+        hf_config.vision_config.reuse_vision_attention_layout = bool(
+            qwenvl_config.get("reuse_vision_attention_layout", False)
+        )
         if dual_stream_config.get("enabled", False):
             hf_config.vision_config.dual_stream = dual_stream_config
             logger.info(f"Dual-stream enabled with config: {dual_stream_config}")

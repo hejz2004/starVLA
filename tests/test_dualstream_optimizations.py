@@ -122,10 +122,12 @@ class ProcessorExamples(torch.utils.data.Dataset):
 @pytest.mark.skipif(not os.path.isdir('/hdfs/share-data-1/users/hjz/Workspace/pretrained/Qwen3-VL-2B-Instruct'),
                     reason='local processor assets required')
 @pytest.mark.parametrize('inherited_rank_environment', [False, True])
-def test_real_processor_spawn_workers_and_h2d_equal_original(monkeypatch, inherited_rank_environment):
+@pytest.mark.parametrize('framework_name', ['DualStreamPI', 'QwenPI', 'QwenFM'])
+def test_real_processor_spawn_workers_and_h2d_equal_original(monkeypatch, inherited_rank_environment, framework_name):
     from transformers import AutoProcessor
     from starVLA.dataloader.qwen_preprocess import configure_worker_preprocessing
     from starVLA.model.modules.vlm.QWen3DualStream import _QWen3DualStream_VL_Interface
+    from starVLA.model.modules.vlm.QWen3 import _QWen3_VL_Interface
     from starVLA.training.trainer_utils.cuda_prefetch import CudaPrefetchIterator
     path='/hdfs/share-data-1/users/hjz/Workspace/pretrained/Qwen3-VL-2B-Instruct'
     processor=AutoProcessor.from_pretrained(path)
@@ -139,14 +141,15 @@ def test_real_processor_spawn_workers_and_h2d_equal_original(monkeypatch, inheri
                           'MASTER_ADDR':'127.0.0.1','MASTER_PORT':'9'}.items():
             monkeypatch.setenv(key,value)
     ds=ProcessorExamples()
-    cfg=OmegaConf.create({'framework':{'name':'DualStreamPI','qwenvl':{'base_vlm':path}},
+    cfg=OmegaConf.create({'framework':{'name':framework_name,'qwenvl':{'base_vlm':path}},
                          'datasets':{'vla_data':{'worker_preprocessing':True,'CoT_prompt':'Task: {instruction}'}}})
     loader=configure_worker_preprocessing(torch.utils.data.DataLoader(ds,batch_size=2,num_workers=2),cfg)
     assert loader.pin_memory and loader.multiprocessing_context.get_start_method()=='spawn'
     iterator=CudaPrefetchIterator(loader,'cuda') if torch.cuda.is_available() else iter(loader)
     for start,batch in zip(range(0,len(ds),2),iterator):
         raw=[ds[i] for i in range(start,min(start+2,len(ds)))]
-        expected=_QWen3DualStream_VL_Interface.build_qwenvl_inputs(interface,
+        interface_class = _QWen3DualStream_VL_Interface if framework_name == 'DualStreamPI' else _QWen3_VL_Interface
+        expected=interface_class.build_qwenvl_inputs(interface,
             [x['image'] for x in raw],[x['lang'] for x in raw])
         assert batch['vlm_inputs'].keys()==expected.keys()
         for key,value in expected.items():torch.testing.assert_close(batch['vlm_inputs'][key].cpu(),value,rtol=0,atol=0)
