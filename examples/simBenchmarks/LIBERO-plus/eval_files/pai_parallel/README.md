@@ -11,8 +11,25 @@
 - 全局内存队列按剩余最大步数加权分发；优先保留套件局部性，空闲 worker 可以领取其他套件。模型不随套件切换重载。不使用 DDP，不合并推理 batch。
 - 任务为 `(suite, variant_id, trial=0)`，四套共 10030 条、七类扰动。正常任务失败计入成绩；环境/进程异常直接停止，保留已完成结果，修复后通过 --resume 继续。
 - 指令协议为 `libero-plus-bddl-v1`：沿用环境规则，定位 BDDL 时去掉 `_view_` 及后续运行时后缀；普通扰动读取该 BDDL 的 `language_instruction`，语言扰动保留文件名中的 `_language_` 变体标识并读取对应改写内容。只整理空白，不从文件名生成指令。两路 RGB 图像各旋转 180° 后，按主摄、腕摄顺序用 PIL BICUBIC 缩放到 224×224；策略输入只有 `image`、`lang`。
-- 直接复用普通 LIBERO `eval_libero.py` 的观测处理和动作执行：双摄顺序、224 缩放、16 步固定锚点、实时 controller reference、OSC7、二值夹爪都一致。策略 RNG 与 WYT 一样不显式设定或逐请求重置；仿真 seed=7。
+- 直接复用普通 LIBERO `eval_libero.py` 的观测处理和动作执行：双摄顺序、224 缩放、16 步固定锚点、实时 controller reference、OSC7、二值夹爪都一致。随机采样遵循下述固定协议。
 - OSMesa、BLAS、OpenMP、OpenCV、ImageMagick 和视频编码限制线程；Numba JIT 保持关闭。
+
+## 当前固定评测协议（2026-11-23）
+
+用户要求后训练只评测最终 checkpoint；训练完成且权重检查通过后，每个模型只跑一次
+完整 LIBERO-Plus，评测 seed=7。不要自动评测中间 checkpoint，也不要追加2026/2027。
+
+- 协议名：`sha256-v1 episode identity + chunk`，`request_seeded=true`。
+- 仿真 seed 与 policy 启动 seed 都是7。每个动作 chunk 用
+  `eval_protocol.inference_seed(7, suite, task_id, trial, chunk)` 派生请求 seed，
+  并在推理前显式重置 RNG。它按该列表的紧凑 JSON 做 SHA256，取前8个十六进制字符转为整数。
+- 不同 chunk 的 seed 不同但可以重复；**不是每次请求都直接设置整数7**。
+  policy 拒绝缺失请求 seed 的调用，controller 校验服务的 seed 元数据。
+- 不得回退到 `wyt-reference-unseeded-policy`。不同协议必须使用独立输出目录，
+  不能混合旧结果或跨协议 `--resume`。单次seed7评测不报告跨评测seed的标准差。
+
+普通 LIBERO parallel evaluator 同样使用此请求采样协议。当前四个模型的最终checkpoint
+重评任务与历史数据区别见 [原生baseline交接记录](../../../../../docs/native_baseline_multiseed_20261122.md)。
 
 ## 入口
 

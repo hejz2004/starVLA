@@ -52,7 +52,7 @@ def execute_job(job,a,standard):
         standard.eval_libero(standard.Args(host='127.0.0.1',port=a.port,
             task_suite_name=job['suite'],num_trials_per_task=1,task_ids=[job['task_id']],
             seed=a.seed,num_steps_wait=10,pretrained_path=a.ckpt,unnorm_key='franka',
-            action_interface='anchored_goal_binary',deterministic_inference=False,
+            action_interface='anchored_goal_binary',deterministic_inference=True,
             results_dir=tmp,protocol_digest=a.protocol_digest,video_out_path=tmp,
             save_video=not a.no_video))
         src=suite_directory(tmp,job['suite'])

@@ -179,7 +179,7 @@ def run(a):
             env=dict(os.environ,CUDA_VISIBLE_DEVICES=device,PYTHONPATH=str(ROOT),PYTHONDONTWRITEBYTECODE='1',
                 OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',MKL_NUM_THREADS='1',HF_HUB_OFFLINE='1',WANDB_MODE='disabled',DEBUG='')
             argv=['-u',str(BUNDLE/'policy_entry.py'),'--ckpt_path',a.ckpt,'--port',str(port),
-                  '--metadata_path',str(directory/'metadata.json'),'--use_bf16',
+                  '--metadata_path',str(directory/'metadata.json'),'--use_bf16','--seed',str(a.seed),
                   '--torch-threads',str(min(2,len(group['policy_cpus'])))]
             if a.force_zero_gate:argv.append('--force-zero-gate')
             process=affinity_exec(a.policy_python,argv,group['policy_cpus'],env,log)
@@ -197,6 +197,8 @@ def run(a):
                             m=msgpack_numpy.unpackb(ws.recv(timeout=2))
                         if m.get('action_contract',{}).get('version')!=VERSION or Path(m.get('ckpt_path','')).resolve()!=Path(a.ckpt):
                             raise ValueError('Policy metadata mismatch')
+                        if not m.get('request_seeded') or m.get('policy_seed') != a.seed:
+                            raise ValueError('Policy seed contract mismatch')
                         if m.get('force_zero_gate') is not a.force_zero_gate:
                             raise ValueError('Policy force_zero_gate mismatch')
                         logging.info('Policy ready %s force_zero_gate=%s',port,a.force_zero_gate);del pending[port]

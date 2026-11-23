@@ -87,7 +87,7 @@ def make_protocol(args,jobs):
         source_sha256=sources,jobs=jobs,seed=args.seed,action_contract=VERSION,
         force_zero_gate=bool(getattr(args,'force_zero_gate',False)),
         action_representation=REPRESENTATION,action_interface='anchored_goal_binary',
-        seed_protocol='wyt-reference-unseeded-policy',policy_seed=None,request_seeded=False,action_chunk_size=16,
+        seed_protocol='sha256-v1 episode identity + chunk',policy_seed=args.seed,request_seeded=True,action_chunk_size=16,
         instruction_source='bddl.language_instruction',instruction_protocol='libero-plus-bddl-v1',image_order=['agentview_image','robot0_eye_in_hand_image'],
         image_rotation_degrees=180,image_resize='PIL BICUBIC 224x224',state_sent_to_policy=False,
         num_steps_wait=10,max_steps={s:MAX_STEPS[s] for s in args.suites},

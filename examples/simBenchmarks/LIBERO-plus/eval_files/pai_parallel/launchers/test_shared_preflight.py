@@ -40,6 +40,22 @@ class PreflightTests(unittest.TestCase):
         self.cfg['framework']['qwenvl']={'cross_view_attention':{'enabled':True,'start_layer':16}}
         self.config.write_text(yaml.safe_dump(self.cfg))
         result=self.execute();self.assertEqual(result.returncode,0,result.stderr)
+    def test_registered_dualstream_aliases_are_accepted(self):
+        for name in ('DualStreamPI','DualStreamQwenPI','DualStreamQwenFM'):
+            with self.subTest(framework=name):
+                self.cfg['framework']['name']=name
+                self.config.write_text(yaml.safe_dump(self.cfg))
+                result=self.execute();self.assertEqual(result.returncode,0,result.stderr)
+    def test_dualstream_alias_still_requires_matching_action_contract(self):
+        self.cfg['framework']['name']='DualStreamPI'
+        action=self.cfg['framework']['action_model']
+        for key,value in [('action_dim',8),('action_horizon',8),('num_inference_timesteps',8),('use_state',True)]:
+            with self.subTest(field=key):
+                original=action[key];action[key]=value
+                self.config.write_text(yaml.safe_dump(self.cfg))
+                result=self.execute();self.assertNotEqual(result.returncode,0)
+                self.assertIn('anchored-goal binary',result.stderr)
+                action[key]=original
     def test_unrelated_framework_is_rejected(self):
         self.cfg['framework']['name']='UnrelatedPolicy'
         self.config.write_text(yaml.safe_dump(self.cfg))

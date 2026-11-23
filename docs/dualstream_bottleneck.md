@@ -4,7 +4,11 @@ Branch: `experiment/dualstream-bottleneck`.
 
 [Native baseline two-seed training and evaluation handoff (2026-11-22)](native_baseline_multiseed_20261122.md)
 records the independent native QwenPI jobs, shared worker preprocessing/CUDA
-prefetch support, P2P settings, and automatic checkpoint evaluation.
+prefetch support, P2P settings, and final-checkpoint evaluation.
+As explicitly requested on 2026-11-23, all subsequent evaluations must retain
+the historical `sha256-v1 episode identity + chunk` request-seeded protocol.
+The latest user correction limits final-only re-evaluation to seed 7 only;
+do not silently revert to the WYT unseeded-policy protocol.
 
 This branch builds on the current starVLA training/data implementation. The
 vision tower and processor interface originate from `803dbc3`; the framework

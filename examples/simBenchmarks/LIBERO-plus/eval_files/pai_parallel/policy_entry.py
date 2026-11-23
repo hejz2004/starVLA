@@ -38,18 +38,23 @@ def main():
     p.add_argument('--ckpt_path',required=True);p.add_argument('--port',required=True,type=int)
     p.add_argument('--metadata_path',required=True);p.add_argument('--use_bf16',action='store_true',required=True)
     p.add_argument('--idle_timeout',type=int,default=-1)
+    p.add_argument('--seed',type=int,required=True)
     p.add_argument('--torch-threads',type=int,default=2)
     p.add_argument('--force-zero-gate',action='store_true')
     a=p.parse_args()
     if a.idle_timeout!=-1: p.error('Use idle_timeout=-1 for shared evaluation')
     import numpy as np
     import torch
+    from deployment.model_server.seed_utils import set_seed_everywhere
     from deployment.model_server.policy_wrapper import PolicyServerWrapper
     from deployment.model_server.tools.websocket_policy_server import WebsocketPolicyServer
     from examples.simBenchmarks.LIBERO.eval_files.eval_protocol import atomic_json
     torch.set_num_threads(a.torch_threads);torch.set_num_interop_threads(1)
     class PlusPolicy(PolicyServerWrapper):
-        def predict_action(self,examples,**kwargs):
+        def predict_action(self,examples,diagnostic_seed=None,**kwargs):
+            if diagnostic_seed is None:
+                raise ValueError("Explicit per-request seed is required")
+            set_seed_everywhere(int(diagnostic_seed))
             if len(examples)!=1 or 'state' in examples[0]:
                 raise ValueError('One stateless observation is required')
             if len(examples[0]['image'])!=2: raise ValueError('Expected agentview and wrist')
@@ -59,14 +64,15 @@ def main():
                 raise ValueError('Expected finite binary-goal [1,16,16] actions')
             return result
     logging.basicConfig(level=logging.INFO)
+    set_seed_everywhere(a.seed)
     policy=PlusPolicy(a.ckpt_path,device='cuda',use_bf16=True,unnorm_key='franka')
     gate_meta=configure_gate_ablation(policy,a.force_zero_gate)
     validate_metadata(policy.metadata)
-    meta=dict(policy.metadata,request_seeded=False,policy_seed=None,seed_protocol='wyt-reference-unseeded-policy',
+    meta=dict(policy.metadata,request_seeded=True,policy_seed=a.seed,seed_protocol='sha256-v1 episode identity + chunk',
         visible_devices=os.environ.get('CUDA_VISIBLE_DEVICES'),torch_version=torch.__version__,
         precision='bf16',policy_threads=a.torch_threads,image_order=['agentview','wrist'],**gate_meta)
     atomic_json(a.metadata_path,meta)
     print('PLUS_POLICY_READY '+json.dumps(meta),flush=True)
-    # Match WYT: inference uses the policy RNG without explicit reseeding.
+    # Each request derives its seed from evaluation seed, suite, task, trial, and chunk.
     WebsocketPolicyServer(policy=policy,host='127.0.0.1',port=a.port,idle_timeout=-1,metadata=meta).serve_forever()
 if __name__=='__main__':main()
